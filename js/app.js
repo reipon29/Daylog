@@ -9,8 +9,7 @@ import {
 
 /* ================= 設定 ================= */
 const SETTINGS_KEY = 'daylog.settings';
-const DEFAULTS = { name: 'わたし', handle: 'me', avatar: '🐳', avatarImage: '', autoLocation: true, geocode: true };
-const AVATARS = ['🐳', '🐬', '🐧', '☁️', '🐣', '🐻', '🐰', '🐱', '🐶', '🐼', '🦊', '🐸', '🌷', '🍓', '☕️'];
+const DEFAULTS = { name: 'わたし', handle: 'me', avatarImage: '', autoLocation: true, geocode: true };
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; }
   catch { return { ...DEFAULTS }; }
@@ -19,9 +18,9 @@ function saveSettings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ }
 }
 let settings = loadSettings();
-const initial = () => settings.avatar || Array.from((settings.name || '?').trim())[0] || '?';
-// アイコン：画像が設定されていれば画像、なければ絵文字
-const avatarHTML = () => (settings.avatarImage ? `<img src="${settings.avatarImage}" alt="">` : esc(initial()));
+// アイコン：設定した画像。未設定なら人型のマーク
+const PERSON_ICON = '<svg class="person" viewBox="0 0 24 24"><circle cx="12" cy="9" r="4"/><path d="M4.5 20.5c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></svg>';
+const avatarHTML = () => (settings.avatarImage ? `<img src="${settings.avatarImage}" alt="">` : PERSON_ICON);
 
 /* ================= 地図 ================= */
 // OpenFreeMap のベクター地図（APIキー不要・高解像度画面でもくっきり）
@@ -796,13 +795,19 @@ async function renderSettings(alive) {
 
   view.innerHTML = `
   <div class="settings">
-    <h2 class="section-title">🐳 プロフィール</h2>
+    <h2 class="section-title">👤 プロフィール</h2>
     <div class="group">
-    <div class="field"><span class="label">アイコン</span>
-      <div class="avatar-pick">
-        <label class="upload ${settings.avatarImage ? 'sel' : ''}" title="好きな画像を選ぶ">${settings.avatarImage ? `<img src="${settings.avatarImage}" alt="">` : I.photo}<input type="file" id="s-avatar" accept="image/*" hidden></label>
-        ${AVATARS.map((a) => `<button type="button" data-av="${a}" class="${!settings.avatarImage && a === settings.avatar ? 'sel' : ''}">${a}</button>`).join('')}</div>
-      <div class="help">左端の📷から好きな画像を選べます（正方形に切り抜かれます）</div></div>
+    <div class="field row avatar-field">
+      <div class="avatar big">${avatarHTML()}</div>
+      <div class="avatar-actions">
+        <span class="label">アイコン</span>
+        <div class="btn-row">
+          <label class="btn small">画像を選ぶ<input type="file" id="s-avatar" accept="image/*" hidden></label>
+          ${settings.avatarImage ? '<button type="button" class="btn small secondary" id="s-avatar-clear">外す</button>' : ''}
+        </div>
+        <div class="help">正方形に切り抜かれます</div>
+      </div>
+    </div>
     <div class="field"><label for="s-name">表示名</label><input id="s-name" type="text" value="${esc(settings.name)}"></div>
     <div class="field"><label for="s-handle">ユーザー名</label><input id="s-handle" type="text" value="${esc(settings.handle)}"></div>
     </div>
@@ -871,13 +876,10 @@ async function renderSettings(alive) {
   });
   bindText('#s-name', 'name');
   bindText('#s-handle', 'handle');
-  view.querySelector('.avatar-pick').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-av]');
-    if (!b) return;
-    settings.avatar = b.dataset.av;
+  $('#s-avatar-clear')?.addEventListener('click', () => {
     settings.avatarImage = '';
     saveSettings();
-    toast(`アイコンを ${b.dataset.av} にしました`);
+    toast('アイコンを外しました');
     router();
   });
   $('#s-avatar').addEventListener('change', async (e) => {

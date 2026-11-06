@@ -607,7 +607,7 @@ function healthHTML(h) {
 
 function bindHealthButtons(root, day) {
   root.querySelectorAll('[data-h]').forEach((b) => b.addEventListener('click', () => {
-    if (b.dataset.h === 'import') importHealthFromClipboard();
+    if (b.dataset.h === 'import') openHealthImport();
     else editHealth(day);
   }));
 }
@@ -635,13 +635,48 @@ async function drawDayMap(el, located) {
 }
 
 /* ================= ヘルスケア ================= */
-async function importHealthFromClipboard() {
-  let text = '';
-  try { text = await navigator.clipboard.readText(); } catch { /* 許可されない環境 */ }
-  if (text.trim()) {
-    try { await importHealthText(text); return; } catch { /* 貼り付け画面へ */ }
-  }
-  pasteHealthDialog();
+// 取り込み画面：クリップボードの内容を入れ、何が読み取れたかをその場で見せる
+async function openHealthImport() {
+  // クリップボードの読み取りは、タップの直後に始める必要がある
+  let clip = '';
+  try { clip = await navigator.clipboard.readText(); } catch { /* 許可されない・キャンセル */ }
+  const closed = openDialog(`
+    <form method="dialog">
+      <div class="dlg-head">ヘルスケアを取り込む</div>
+      <div class="dlg-body">
+        <div class="field">
+          <span class="help">ショートカットでコピーした内容が入ります。空のときは、下の枠を長押しして「ペースト」してください。</span>
+          <textarea name="txt" class="mono" placeholder="歩数: 8123&#10;距離: 5.4&#10;睡眠: 7.2"></textarea>
+          <div class="health-preview"></div>
+        </div>
+      </div>
+      <div class="dlg-foot"><button class="btn secondary" value="cancel">キャンセル</button><button class="btn" value="ok" disabled>取り込む</button></div>
+    </form>`);
+  const form = $('#dialog form');
+  const ta = form.elements.txt;
+  const preview = form.querySelector('.health-preview');
+  const okBtn = form.querySelector('[value=ok]');
+  ta.value = clip;
+  const update = () => {
+    const has = ta.value.trim().length > 0;
+    try {
+      const records = parseHealthText(ta.value);
+      preview.className = 'health-preview ok';
+      preview.innerHTML = '<div class="pv-title">✓ 読み取れた内容</div>' + records.map((r) => `
+        <div class="pv-day">${r.date === dayKey() ? '今日' : fmtDate(parseDay(r.date).getTime())}</div>
+        <div class="pv-items">${HEALTH_FIELDS.filter((f) => r[f.key] != null)
+    .map((f) => `<span>${f.icon} ${f.label} <b>${formatValue(f, r[f.key])}</b>${f.unit}</span>`).join('')}</div>`).join('');
+      okBtn.disabled = false;
+    } catch (e) {
+      preview.className = `health-preview ${has ? 'ng' : ''}`;
+      preview.textContent = has ? e.message : '';
+      okBtn.disabled = true;
+    }
+  };
+  ta.addEventListener('input', update);
+  update();
+  if ((await closed) !== 'ok') return;
+  try { await importHealthText(ta.value); } catch (e) { toast(e.message); }
 }
 
 async function importHealthText(text) {
@@ -654,22 +689,6 @@ async function importHealthText(text) {
     ? `${fmtDate(parseDay(records[0].date).getTime())}のヘルスケアを取り込みました`
     : `${records.length}日分のヘルスケアを取り込みました`);
   router();
-}
-
-async function pasteHealthDialog() {
-  const r = await openDialog(`
-    <form method="dialog">
-      <div class="dlg-head">ヘルスケアを取り込む</div>
-      <div class="dlg-body">
-        <div class="field">
-          <span class="help">ショートカットでコピーした内容を貼り付けてください。</span>
-          <textarea name="json" class="mono" placeholder='{"date":"2026-11-06","steps":8123,"sleep":7.2}'></textarea>
-        </div>
-      </div>
-      <div class="dlg-foot"><button class="btn secondary" value="cancel">キャンセル</button><button class="btn" value="ok">取り込む</button></div>
-    </form>`);
-  if (r !== 'ok') return;
-  try { await importHealthText($('#dialog form').json.value); } catch (e) { toast(e.message); }
 }
 
 async function editHealth(day) {
@@ -823,34 +842,34 @@ async function renderSettings(alive) {
     <h2 class="section-title">💗 ヘルスケア</h2>
     <div class="group">
     <div class="field">
-      <div class="help">iPhone のショートカットで今日のヘルスケアをコピーしてから「クリップボードから取り込む」を押します。</div>
+      <div class="help">iPhone の「ショートカット」で今日の数値をコピーしてから「取り込む」を押します。うまくいかないときは、日記帳の「手入力」でも記録できます。</div>
       <div class="btn-row">
-        <button class="btn small" id="h-clip">クリップボードから取り込む</button>
-        <button class="btn small secondary" id="h-paste">貼り付けて取り込む</button>
+        <button class="btn small" id="h-clip">取り込む</button>
         <label class="btn small secondary">ファイルから<input type="file" id="h-file" accept=".json,.txt,application/json,text/plain" hidden></label>
       </div>
     </div>
     <details class="howto">
-      <summary>ショートカットの作り方</summary>
+      <summary>ショートカットの作り方（歩数だけなら5分）</summary>
       <ol>
-        <li>「ショートカット」アプリで新規ショートカットを作成</li>
-        <li><code>ヘルスケアサンプルを検索</code>（種類: 歩数 / 開始日: 今日）→ <code>統計を計算</code>（合計）</li>
-        <li>同様に 距離・アクティブエネルギー・睡眠 などを取得</li>
-        <li><code>辞書</code> を追加し、下のキー名で値を入れる（date は <code>日付を書式設定</code> で yyyy-MM-dd）</li>
-        <li><code>クリップボードにコピー</code> で辞書をコピー</li>
-        <li>（任意）オートメーションで毎晩 22:00 に「すぐに実行」</li>
+        <li>「ショートカット」アプリを開き、右上の <b>＋</b> で新規作成</li>
+        <li>「アクションを追加」で <code>ヘルスケアサンプルを検索</code> を追加
+          <br>・種類：<b>歩数</b>　・開始日：<b>今日</b>
+          <br>・「グループ化」があれば <b>日</b> にする（1日の合計になります）</li>
+        <li><code>テキスト</code> アクションを追加し、次のように書く
+          <pre>歩数: </pre>
+          「歩数: 」の後ろをタップ → 上に出る候補から <b>ヘルスケアサンプル</b> を選んで差し込む</li>
+        <li><code>クリップボードにコピー</code> を追加</li>
+        <li>名前を「Daylog」などにして保存 → 一度実行</li>
+        <li>Daylog に戻って <b>取り込む</b> → 「読み取れた内容」を確認して取り込む</li>
       </ol>
-      <pre>{
-  "date": "2026-11-06",
-  "steps": 8123,
-  "distance": 5.4,
-  "activeEnergy": 320,
-  "exercise": 35,
-  "sleep": 7.2,
-  "restingHR": 58,
-  "weight": 62.5
-}</pre>
-      <div class="help">配列で複数日分をまとめて渡すこともできます。詳しくは README を参照。</div>
+      <div class="help">距離・睡眠なども増やしたいときは、2〜3を項目ごとに繰り返し、テキストに1行ずつ書き足します。</div>
+      <pre>歩数: 8123
+距離: 5.4
+アクティブエネルギー: 320
+睡眠: 7.2
+体重: 62.5</pre>
+      <div class="help">使える項目名：歩数／距離／アクティブエネルギー／エクササイズ／上った階数／睡眠／安静時心拍数／心拍数／体重／マインドフルネス。単位（歩・km など）がついていても大丈夫です。</div>
+      <div class="help">毎晩自動でコピーしたいときは、ショートカットの「オートメーション」→「時刻」→ 22:00 → このショートカットを「すぐに実行」。</div>
     </details>
     </div>
 
@@ -902,8 +921,7 @@ async function renderSettings(alive) {
   });
   $('#s-geocode').addEventListener('change', (e) => { settings.geocode = e.target.checked; saveSettings(); });
 
-  $('#h-clip').addEventListener('click', importHealthFromClipboard);
-  $('#h-paste').addEventListener('click', pasteHealthDialog);
+  $('#h-clip').addEventListener('click', openHealthImport);
   $('#h-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     e.target.value = '';

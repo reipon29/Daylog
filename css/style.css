@@ -313,3 +313,13 @@ input, textarea, select { font-size: 16px !important; }
 .field.avatar-field { justify-content: flex-start; gap: 18px; }
 .avatar.big { width: 72px; height: 72px; }
 .avatar-actions { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---------- ヘルスケア取り込みのプレビュー ---------- */
+.health-preview:empty { display: none; }
+.health-preview { border-radius: 14px; padding: 10px 12px; font-size: 13px; }
+.health-preview.ok { background: var(--tint2); }
+.health-preview.ng { background: var(--tint4); color: var(--danger); font-weight: 700; }
+.health-preview .pv-title { font-weight: 900; color: var(--ok); margin-bottom: 4px; }
+.health-preview .pv-day { font-weight: 700; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.health-preview .pv-items { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.health-preview b { font-size: 15px; }

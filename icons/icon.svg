@@ -1,46 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#9edcff"/>
-      <stop offset="1" stop-color="#4fb0f5"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a9e2ff"/>
+      <stop offset="1" stop-color="#4aa8f2"/>
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-
-  <!-- ふわふわ雲 -->
-  <g fill="#ffffff" opacity=".55">
-    <circle cx="78" cy="418" r="34"/><circle cx="120" cy="404" r="42"/><circle cx="166" cy="424" r="30"/>
-    <circle cx="396" cy="96" r="24"/><circle cx="428" cy="84" r="30"/><circle cx="458" cy="100" r="20"/>
-  </g>
-
-  <!-- きらきら -->
-  <g fill="#ffffff">
-    <path d="M92 120 l8 20 20 8 -20 8 -8 20 -8 -20 -20 -8 20 -8z"/>
-    <path d="M420 330 l6 14 14 6 -14 6 -6 14 -6 -14 -14 -6 14 -6z"/>
-  </g>
-
-  <!-- ノートの影 -->
-  <rect x="134" y="130" width="252" height="286" rx="56" fill="#2f86cf" opacity=".25"/>
-  <!-- ノート本体 -->
-  <rect x="128" y="116" width="252" height="286" rx="56" fill="#ffffff"/>
-  <!-- しおり -->
-  <path d="M318 116 h30 v62 l-15 -12 -15 12z" fill="#ff8fb5"/>
-  <!-- リング -->
-  <g fill="#bfe5ff" stroke="#ffffff" stroke-width="6">
-    <rect x="170" y="92" width="22" height="50" rx="11"/>
-    <rect x="222" y="92" width="22" height="50" rx="11"/>
-    <rect x="274" y="92" width="22" height="50" rx="11"/>
-  </g>
-
-  <!-- 顔 -->
-  <ellipse cx="208" cy="262" rx="17" ry="20" fill="#2f4058"/>
-  <ellipse cx="300" cy="262" rx="17" ry="20" fill="#2f4058"/>
-  <circle cx="214" cy="254" r="6" fill="#ffffff"/>
-  <circle cx="306" cy="254" r="6" fill="#ffffff"/>
-  <ellipse cx="176" cy="306" rx="24" ry="14" fill="#ffb8cf"/>
-  <ellipse cx="332" cy="306" rx="24" ry="14" fill="#ffb8cf"/>
-  <path d="M236 298 q18 20 36 0" fill="none" stroke="#2f4058" stroke-width="10" stroke-linecap="round"/>
-
-  <!-- ハート -->
-  <path d="M254 364 c-10 -14 -30 -6 -24 10 c4 10 24 22 24 22 s20 -12 24 -22 c6 -16 -14 -24 -24 -10z" fill="#ff8fb5"/>
+  <!-- 大きなキラキラ -->
+  <path d="M236 96 C246 196 276 226 376 236 C276 246 246 276 236 376 C226 276 196 246 96 236 C196 226 226 196 236 96Z" fill="#ffffff"/>
+  <!-- 小さなキラキラ -->
+  <path d="M370 300 C374 338 386 350 424 354 C386 358 374 370 370 408 C366 370 354 358 316 354 C354 350 366 338 370 300Z" fill="#ffffff" opacity=".9"/>
+  <path d="M378 104 C380 124 386 130 406 132 C386 134 380 140 378 160 C376 140 370 134 350 132 C370 130 376 124 378 104Z" fill="#ffffff" opacity=".75"/>
 </svg>

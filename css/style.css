@@ -175,17 +175,16 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .day-head .date .today-badge { display: inline-block; background: var(--accent); color: #fff; border-radius: 999px; padding: 0 8px; font-size: 11px; margin-left: 4px; }
 .day-head .date input[type=date] { opacity: 0; position: absolute; width: 1px; height: 1px; pointer-events: none; }
 
-.health-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 12px 10px; }
-.health-tile { border-radius: 20px; padding: 10px 12px 12px; background: var(--tint1); }
-.health-tile:nth-child(5n+2) { background: var(--tint2); }
-.health-tile:nth-child(5n+3) { background: var(--tint3); }
-.health-tile:nth-child(5n+4) { background: var(--tint4); }
-.health-tile:nth-child(5n+5) { background: var(--tint5); }
-.health-tile .ico { font-size: 20px; line-height: 1; }
-.health-tile .label { font-size: 11px; color: var(--muted); font-weight: 700; margin-top: 4px; }
-.health-tile .value { font-size: 21px; font-weight: 900; line-height: 1.2; }
-.health-tile .unit { font-size: 11px; color: var(--muted); font-weight: 700; margin-left: 2px; }
-.health-empty { margin: 0 12px 10px; padding: 16px; background: var(--card); box-shadow: var(--shadow); border-radius: 22px; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 12px 10px; }
+.stat-tile { border-radius: 20px; padding: 10px 12px 12px; background: var(--tint1); }
+.stat-tile:nth-child(5n+2) { background: var(--tint2); }
+.stat-tile:nth-child(5n+3) { background: var(--tint3); }
+.stat-tile:nth-child(5n+4) { background: var(--tint4); }
+.stat-tile:nth-child(5n+5) { background: var(--tint5); }
+.stat-tile .ico { font-size: 20px; line-height: 1; }
+.stat-tile .label { font-size: 11px; color: var(--muted); font-weight: 700; margin-top: 4px; }
+.stat-tile .value { font-size: 21px; font-weight: 900; line-height: 1.2; }
+.stat-tile .unit { font-size: 11px; color: var(--muted); font-weight: 700; margin-left: 2px; }
 
 .map { height: 280px; margin: 0 12px 8px; border-radius: 24px; overflow: hidden; background: var(--bg-elev); box-shadow: var(--shadow); z-index: 0; }
 .map.tall { height: calc(100dvh - 76px - var(--tabbar-h) - var(--safe-b) - var(--safe-t)); margin: 0 12px; }
@@ -226,7 +225,6 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .cal a .dots { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; margin-top: auto; }
 .cal a .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .cal a .dots i.loc { background: var(--mint); }
-.cal a .steps { font-size: 8.5px; color: var(--muted); white-space: nowrap; font-weight: 700; }
 .legend { display: flex; gap: 14px; justify-content: center; font-size: 12px; color: var(--muted); font-weight: 700; padding: 4px 0 8px; }
 .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 4px; }
 .legend i.loc { background: var(--mint); }
@@ -313,13 +311,3 @@ input, textarea, select { font-size: 16px !important; }
 .field.avatar-field { justify-content: flex-start; gap: 18px; }
 .avatar.big { width: 72px; height: 72px; }
 .avatar-actions { display: flex; flex-direction: column; gap: 6px; }
-
-/* ---------- ヘルスケア取り込みのプレビュー ---------- */
-.health-preview:empty { display: none; }
-.health-preview { border-radius: 14px; padding: 10px 12px; font-size: 13px; }
-.health-preview.ok { background: var(--tint2); }
-.health-preview.ng { background: var(--tint4); color: var(--danger); font-weight: 700; }
-.health-preview .pv-title { font-weight: 900; color: var(--ok); margin-bottom: 4px; }
-.health-preview .pv-day { font-weight: 700; color: var(--muted); font-size: 12px; margin-top: 4px; }
-.health-preview .pv-items { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-.health-preview b { font-size: 15px; }

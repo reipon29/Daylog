@@ -1,6 +1,5 @@
 import { db } from './db.js';
 import { getPosition, reverseGeocode } from './location.js';
-import { HEALTH_FIELDS, parseHealthText, formatValue } from './health.js';
 import { readExif } from './exif.js';
 import {
   $, esc, uid, dayKey, parseDay, addDays, isDayKey, weekday, fmtTime, fmtDate, fmtRelative,
@@ -501,7 +500,7 @@ async function renderHome(query, alive) {
 async function renderDay(day, alive) {
   const today = dayKey();
   setChrome('日記帳', 'day', day !== today ? '<a class="btn small secondary" href="#/day">今日</a>' : '');
-  const [posts, health, all] = await Promise.all([db.postsByDay(day), db.getHealth(day), db.allPosts()]);
+  const [posts, all] = await Promise.all([db.postsByDay(day), db.allPosts()]);
   if (!alive()) return;
   posts.sort((a, b) => a.createdAt - b.createdAt);
   const md = day.slice(5);
@@ -521,8 +520,9 @@ async function renderDay(day, alive) {
       <a class="icon-btn" href="#/day/${addDays(day, 1)}" aria-label="次の日">${I.right}</a>
     </div>
 
-    <h2 class="section-title">💗 からだ</h2>
-    ${healthHTML(health)}
+    <h2 class="section-title">📝 できごと</h2>
+    ${composerHTML({ day })}
+    <div class="diary">${posts.map((p) => postHTML(p, { diary: true })).join('') || '<p class="section-sub" style="padding-top:8px">まだ何も書かれていません ✏️</p>'}</div>
 
     <h2 class="section-title">🐾 足あと
       <label class="btn small secondary title-btn">📷 写真から追加<input type="file" id="photo-trail" accept="image/*" multiple hidden></label></h2>
@@ -531,10 +531,6 @@ async function renderDay(day, alive) {
       <ol class="places">${located.map((p, i) => `
         <li><span class="num">${i + 1}</span><span class="t">${fmtTime(p.createdAt)}</span><span class="n"><span data-loc-for="${p.id}"><span>${esc(p.loc.name || '（地名を取得できませんでした）')}</span></span></span></li>`).join('')}
       </ol>` : '<p class="section-sub">この日の足あとはまだありません。おでかけ先でチェックインするか、「写真から追加」で撮った写真を選ぶと、ここに地図ができます 🐾</p>'}
-
-    <h2 class="section-title">📝 できごと</h2>
-    ${composerHTML({ day })}
-    <div class="diary">${posts.map((p) => postHTML(p, { diary: true })).join('') || '<p class="section-sub" style="padding-top:8px">まだ何も書かれていません ✏️</p>'}</div>
 
     ${past.length ? `<h2 class="section-title">🕰️ 過去の${d.getMonth() + 1}月${d.getDate()}日</h2>${past.map((p) => postHTML(p)).join('')}` : ''}
   `;
@@ -545,7 +541,6 @@ async function renderDay(day, alive) {
   dateInput.addEventListener('change', () => { if (isDayKey(dateInput.value)) location.hash = `#/day/${dateInput.value}`; });
 
   bindComposer(view.querySelector('.composer'), { day, onPosted: router });
-  bindHealthButtons(view, day);
   hydratePhotos(view);
   $('#photo-trail').addEventListener('change', async (e) => {
     const files = [...e.target.files];
@@ -592,26 +587,6 @@ async function importPhotoTrail(files, currentDay) {
   else router();
 }
 
-function healthHTML(h) {
-  const fields = HEALTH_FIELDS.filter((f) => h?.[f.key] != null);
-  if (!fields.length) {
-    return `<div class="health-empty"><span>ヘルスケアのデータがありません</span>
-      <span class="btn-row"><button class="btn small" data-h="import">取り込む</button><button class="btn small secondary" data-h="edit">手入力</button></span></div>`;
-  }
-  return `<div class="health-grid">${fields.map((f) => `
-      <div class="health-tile"><div class="ico">${f.icon}</div><div class="label">${f.label}</div>
-      <div class="value">${formatValue(f, h[f.key])}<span class="unit">${f.unit}</span></div></div>`).join('')}
-    </div>
-    <div class="btn-row" style="padding:0 12px 4px"><button class="btn small secondary" data-h="import">取り込む</button><button class="btn small secondary" data-h="edit">編集</button></div>`;
-}
-
-function bindHealthButtons(root, day) {
-  root.querySelectorAll('[data-h]').forEach((b) => b.addEventListener('click', () => {
-    if (b.dataset.h === 'import') openHealthImport();
-    else editHealth(day);
-  }));
-}
-
 async function drawDayMap(el, located) {
   try {
     await createMap(el, located, {
@@ -634,94 +609,13 @@ async function drawDayMap(el, located) {
   }
 }
 
-/* ================= ヘルスケア ================= */
-// 取り込み画面：クリップボードの内容を入れ、何が読み取れたかをその場で見せる
-async function openHealthImport() {
-  // クリップボードの読み取りは、タップの直後に始める必要がある
-  let clip = '';
-  try { clip = await navigator.clipboard.readText(); } catch { /* 許可されない・キャンセル */ }
-  const closed = openDialog(`
-    <form method="dialog">
-      <div class="dlg-head">ヘルスケアを取り込む</div>
-      <div class="dlg-body">
-        <div class="field">
-          <span class="help">ショートカットでコピーした内容が入ります。空のときは、下の枠を長押しして「ペースト」してください。</span>
-          <textarea name="txt" class="mono" placeholder="歩数: 8123&#10;距離: 5.4&#10;睡眠: 7.2"></textarea>
-          <div class="health-preview"></div>
-        </div>
-      </div>
-      <div class="dlg-foot"><button class="btn secondary" value="cancel">キャンセル</button><button class="btn" value="ok" disabled>取り込む</button></div>
-    </form>`);
-  const form = $('#dialog form');
-  const ta = form.elements.txt;
-  const preview = form.querySelector('.health-preview');
-  const okBtn = form.querySelector('[value=ok]');
-  ta.value = clip;
-  const update = () => {
-    const has = ta.value.trim().length > 0;
-    try {
-      const records = parseHealthText(ta.value);
-      preview.className = 'health-preview ok';
-      preview.innerHTML = '<div class="pv-title">✓ 読み取れた内容</div>' + records.map((r) => `
-        <div class="pv-day">${r.date === dayKey() ? '今日' : fmtDate(parseDay(r.date).getTime())}</div>
-        <div class="pv-items">${HEALTH_FIELDS.filter((f) => r[f.key] != null)
-    .map((f) => `<span>${f.icon} ${f.label} <b>${formatValue(f, r[f.key])}</b>${f.unit}</span>`).join('')}</div>`).join('');
-      okBtn.disabled = false;
-    } catch (e) {
-      preview.className = `health-preview ${has ? 'ng' : ''}`;
-      preview.textContent = has ? e.message : '';
-      okBtn.disabled = true;
-    }
-  };
-  ta.addEventListener('input', update);
-  update();
-  if ((await closed) !== 'ok') return;
-  try { await importHealthText(ta.value); } catch (e) { toast(e.message); }
-}
-
-async function importHealthText(text) {
-  const records = parseHealthText(text);
-  for (const r of records) {
-    const existing = (await db.getHealth(r.date)) || {};
-    await db.putHealth({ ...existing, ...r, updatedAt: Date.now() });
-  }
-  toast(records.length === 1
-    ? `${fmtDate(parseDay(records[0].date).getTime())}のヘルスケアを取り込みました`
-    : `${records.length}日分のヘルスケアを取り込みました`);
-  router();
-}
-
-async function editHealth(day) {
-  const h = (await db.getHealth(day)) || { date: day };
-  const r = await openDialog(`
-    <form method="dialog">
-      <div class="dlg-head">${fmtDate(parseDay(day).getTime())}のからだ</div>
-      <div class="dlg-body">
-        ${HEALTH_FIELDS.map((f) => `
-          <div class="field row"><label for="h-${f.key}">${f.label}<span class="help"> (${f.unit})</span></label>
-          <input id="h-${f.key}" type="number" step="any" inputmode="decimal" name="${f.key}" value="${h[f.key] ?? ''}" style="max-width:140px;text-align:right"></div>`).join('')}
-      </div>
-      <div class="dlg-foot"><button class="btn secondary" value="cancel">キャンセル</button><button class="btn" value="ok">保存</button></div>
-    </form>`);
-  if (r !== 'ok') return;
-  const f = $('#dialog form');
-  const rec = { date: day, updatedAt: Date.now() };
-  for (const field of HEALTH_FIELDS) {
-    const v = f.elements[field.key].value.trim();
-    if (v !== '' && Number.isFinite(Number(v))) rec[field.key] = Number(v);
-  }
-  await db.putHealth(rec);
-  toast('保存しました');
-  router();
-}
-
 /* ================= カレンダー ================= */
 async function renderCalendar(ym, alive) {
   const thisMonth = dayKey().slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(ym)) ym = thisMonth;
   setChrome('カレンダー', 'calendar', ym !== thisMonth ? '<a class="btn small secondary" href="#/calendar">今月</a>' : '');
   const [y, m] = ym.split('-').map(Number);
-  const [posts, health] = await Promise.all([db.allPosts(), db.allHealth()]);
+  const posts = await db.allPosts();
   if (!alive()) return;
 
   const byDay = new Map();
@@ -732,8 +626,6 @@ async function renderCalendar(ym, alive) {
     if (p.loc) e.loc++;
     byDay.set(p.day, e);
   }
-  const hMap = new Map(health.filter((h) => h.date.startsWith(ym)).map((h) => [h.date, h]));
-  const steps = [...hMap.values()].map((h) => h.steps).filter((v) => v != null);
   const monthPosts = [...byDay.values()].reduce((s, e) => s + e.n, 0);
 
   const first = new Date(y, m - 1, 1);
@@ -747,11 +639,9 @@ async function renderCalendar(ym, alive) {
   for (let dd = 1; dd <= daysIn; dd++) {
     const key = `${ym}-${String(dd).padStart(2, '0')}`;
     const e = byDay.get(key);
-    const h = hMap.get(key);
     const dots = e ? Array.from({ length: Math.min(e.n, 6) }, (_, i) => `<i class="${i < e.loc ? 'loc' : ''}"></i>`).join('') : '';
     cells += `<a href="#/day/${key}" class="${e ? 'has' : ''} ${key === today ? 'today' : ''}">
       <span class="d">${dd}</span>
-      ${h?.steps != null ? `<span class="steps">${Math.round(h.steps).toLocaleString()}歩</span>` : ''}
       <span class="dots">${dots}</span></a>`;
   }
 
@@ -762,10 +652,10 @@ async function renderCalendar(ym, alive) {
       <a class="icon-btn" href="#/calendar/${next}" aria-label="次の月">${I.right}</a>
     </div>
     <div class="cal">${[...'日月火水木金土'].map((w) => `<div class="wd">${w}</div>`).join('')}${cells}</div>
-    <div class="health-grid">
-      <div class="health-tile"><div class="label">ポスト</div><div class="value">${monthPosts}<span class="unit">件</span></div></div>
-      <div class="health-tile"><div class="label">書いた日</div><div class="value">${byDay.size}<span class="unit">日</span></div></div>
-      <div class="health-tile"><div class="label">平均歩数</div><div class="value">${steps.length ? Math.round(steps.reduce((a, b) => a + b, 0) / steps.length).toLocaleString() : '–'}<span class="unit">歩</span></div></div>
+    <div class="stat-grid">
+      <div class="stat-tile"><div class="label">ポスト</div><div class="value">${monthPosts}<span class="unit">件</span></div></div>
+      <div class="stat-tile"><div class="label">書いた日</div><div class="value">${byDay.size}<span class="unit">日</span></div></div>
+      <div class="stat-tile"><div class="label">足あと</div><div class="value">${[...byDay.values()].reduce((n, e) => n + e.loc, 0)}<span class="unit">か所</span></div></div>
     </div>
     <div class="legend"><span><i></i>ポスト</span><span><i class="loc"></i>位置つき</span></div>`;
 }
@@ -839,40 +729,6 @@ async function renderSettings(alive) {
       <label class="switch"><input type="checkbox" id="s-geocode" ${settings.geocode ? 'checked' : ''}><span></span></label></div>
     </div>
 
-    <h2 class="section-title">💗 ヘルスケア</h2>
-    <div class="group">
-    <div class="field">
-      <div class="help">iPhone の「ショートカット」で今日の数値をコピーしてから「取り込む」を押します。うまくいかないときは、日記帳の「手入力」でも記録できます。</div>
-      <div class="btn-row">
-        <button class="btn small" id="h-clip">取り込む</button>
-        <label class="btn small secondary">ファイルから<input type="file" id="h-file" accept=".json,.txt,application/json,text/plain" hidden></label>
-      </div>
-    </div>
-    <details class="howto">
-      <summary>ショートカットの作り方（歩数だけなら5分）</summary>
-      <ol>
-        <li>「ショートカット」アプリを開き、右上の <b>＋</b> で新規作成</li>
-        <li>「アクションを追加」で <code>ヘルスケアサンプルを検索</code> を追加
-          <br>・種類：<b>歩数</b>　・開始日：<b>今日</b>
-          <br>・「グループ化」があれば <b>日</b> にする（1日の合計になります）</li>
-        <li><code>テキスト</code> アクションを追加し、次のように書く
-          <pre>歩数: </pre>
-          「歩数: 」の後ろをタップ → 上に出る候補から <b>ヘルスケアサンプル</b> を選んで差し込む</li>
-        <li><code>クリップボードにコピー</code> を追加</li>
-        <li>名前を「Daylog」などにして保存 → 一度実行</li>
-        <li>Daylog に戻って <b>取り込む</b> → 「読み取れた内容」を確認して取り込む</li>
-      </ol>
-      <div class="help">距離・睡眠なども増やしたいときは、2〜3を項目ごとに繰り返し、テキストに1行ずつ書き足します。</div>
-      <pre>歩数: 8123
-距離: 5.4
-アクティブエネルギー: 320
-睡眠: 7.2
-体重: 62.5</pre>
-      <div class="help">使える項目名：歩数／距離／アクティブエネルギー／エクササイズ／上った階数／睡眠／安静時心拍数／心拍数／体重／マインドフルネス。単位（歩・km など）がついていても大丈夫です。</div>
-      <div class="help">毎晩自動でコピーしたいときは、ショートカットの「オートメーション」→「時刻」→ 22:00 → このショートカットを「すぐに実行」。</div>
-    </details>
-    </div>
-
     <h2 class="section-title">💾 バックアップ</h2>
     <div class="group"><div class="field">
       <div class="help">データはこの端末の中だけに保存されています。機種変更やもしもに備えて、ときどき書き出してください。
@@ -885,7 +741,7 @@ async function renderSettings(alive) {
 
     <h2 class="section-title">🧹 その他</h2>
     <div class="group"><div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div></div>
-    <p class="section-sub" style="padding-top:12px">Daylog v1.1</p>
+    <p class="section-sub" style="padding-top:12px">Daylog v1.2</p>
   </div>`;
 
   const bindText = (id, key) => $(id).addEventListener('change', (e) => {
@@ -921,14 +777,6 @@ async function renderSettings(alive) {
   });
   $('#s-geocode').addEventListener('change', (e) => { settings.geocode = e.target.checked; saveSettings(); });
 
-  $('#h-clip').addEventListener('click', openHealthImport);
-  $('#h-file').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
-    try { await importHealthText(await file.text()); } catch (err) { toast(err.message); }
-  });
-
   $('#b-export').addEventListener('click', exportBackup);
   $('#b-import').addEventListener('change', async (e) => {
     const file = e.target.files[0];
@@ -936,7 +784,7 @@ async function renderSettings(alive) {
     if (file) await importBackup(file);
   });
   $('#wipe').addEventListener('click', async () => {
-    if (!confirm('すべてのポストとヘルスケアのデータを削除します。元に戻せません。よろしいですか？')) return;
+    if (!confirm('すべてのポストと写真を削除します。元に戻せません。よろしいですか？')) return;
     if (!confirm('本当に削除しますか？（先にバックアップを書き出すことをおすすめします）')) return;
     await db.clearAll();
     toast('すべて削除しました');

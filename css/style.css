@@ -311,3 +311,13 @@ input, textarea, select { font-size: 16px !important; }
 .field.avatar-field { justify-content: flex-start; gap: 18px; }
 .avatar.big { width: 72px; height: 72px; }
 .avatar-actions { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---------- 使い方 ---------- */
+.guide details.howto + details.howto { border-top: 1.5px dashed var(--border); }
+.guide details.howto summary { list-style: none; display: flex; justify-content: space-between; align-items: center; color: var(--text); }
+.guide details.howto summary::-webkit-details-marker { display: none; }
+.guide details.howto summary::after { content: "＋"; color: var(--accent); font-weight: 900; }
+.guide details.howto[open] summary::after { content: "－"; }
+.guide details.howto ul { padding-left: 18px; margin: 8px 0 4px; }
+.guide details.howto li { margin: 6px 0; line-height: 1.6; }
+.group.guide > details.howto:first-child { border-top: 0; }

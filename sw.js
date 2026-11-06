@@ -1,6 +1,6 @@
 // Service Worker: アプリ本体をキャッシュしてオフラインでも起動できるようにする。
 // ファイルを更新したら VERSION を上げる。
-const VERSION = 'daylog-v1';
+const VERSION = 'daylog-v3';
 const SHELL = [
   './',
   './index.html',
@@ -16,7 +16,7 @@ const SHELL = [
   './icons/icon-192.png',
   './icons/icon-512.png',
 ];
-const CDN = 'https://cdnjs.cloudflare.com/';
+const CDN = ['https://cdnjs.cloudflare.com/', 'https://fonts.googleapis.com/', 'https://fonts.gstatic.com/'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -50,7 +50,7 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(fetch(request).catch(() => caches.match('./index.html')));
     return;
   }
-  if (url.origin === self.location.origin || url.href.startsWith(CDN)) {
+  if (url.origin === self.location.origin || CDN.some((c) => url.href.startsWith(c))) {
     e.respondWith(swr(request));
   }
   // 地図タイル・地名検索はネットワークのみ

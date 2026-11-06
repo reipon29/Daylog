@@ -2,16 +2,16 @@ import { dayKey, isDayKey } from './util.js';
 
 // 表示する項目。key はショートカットで作る辞書のキー名。
 export const HEALTH_FIELDS = [
-  { key: 'steps', label: '歩数', unit: '歩', digits: 0, aliases: ['歩数', 'step', 'stepCount'] },
-  { key: 'distance', label: '距離', unit: 'km', digits: 1, aliases: ['距離', 'walkingDistance', 'distanceKm'] },
-  { key: 'activeEnergy', label: 'アクティブ', unit: 'kcal', digits: 0, aliases: ['アクティブエネルギー', 'activeCalories', 'kcal'] },
-  { key: 'exercise', label: 'エクササイズ', unit: '分', digits: 0, aliases: ['エクササイズ', 'exerciseMinutes'] },
-  { key: 'flights', label: '上った階数', unit: '階', digits: 0, aliases: ['上った階数', 'flightsClimbed'] },
-  { key: 'sleep', label: '睡眠', unit: '時間', digits: 1, aliases: ['睡眠', 'sleepHours'] },
-  { key: 'restingHR', label: '安静時心拍', unit: 'bpm', digits: 0, aliases: ['安静時心拍数', 'restingHeartRate'] },
-  { key: 'heartRate', label: '平均心拍', unit: 'bpm', digits: 0, aliases: ['心拍数', 'avgHeartRate'] },
-  { key: 'weight', label: '体重', unit: 'kg', digits: 1, aliases: ['体重', 'bodyMass'] },
-  { key: 'mindful', label: 'マインドフル', unit: '分', digits: 0, aliases: ['マインドフルネス', 'mindfulMinutes'] },
+  { key: 'steps', icon: '👟', label: '歩数', unit: '歩', digits: 0, aliases: ['歩数', 'step', 'stepCount'] },
+  { key: 'distance', icon: '🗺️', label: '距離', unit: 'km', digits: 1, aliases: ['距離', 'walkingDistance', 'distanceKm'] },
+  { key: 'activeEnergy', icon: '🔥', label: 'アクティブ', unit: 'kcal', digits: 0, aliases: ['アクティブエネルギー', 'activeCalories', 'kcal'] },
+  { key: 'exercise', icon: '💪', label: 'エクササイズ', unit: '分', digits: 0, aliases: ['エクササイズ', 'exerciseMinutes'] },
+  { key: 'flights', icon: '🪜', label: '上った階数', unit: '階', digits: 0, aliases: ['上った階数', 'flightsClimbed'] },
+  { key: 'sleep', icon: '😴', label: '睡眠', unit: '時間', digits: 1, aliases: ['睡眠', 'sleepHours'] },
+  { key: 'restingHR', icon: '💓', label: '安静時心拍', unit: 'bpm', digits: 0, aliases: ['安静時心拍数', 'restingHeartRate'] },
+  { key: 'heartRate', icon: '❤️', label: '平均心拍', unit: 'bpm', digits: 0, aliases: ['心拍数', 'avgHeartRate'] },
+  { key: 'weight', icon: '⚖️', label: '体重', unit: 'kg', digits: 1, aliases: ['体重', 'bodyMass'] },
+  { key: 'mindful', icon: '🧘', label: 'マインドフル', unit: '分', digits: 0, aliases: ['マインドフルネス', 'mindfulMinutes'] },
 ];
 
 const ALIAS = new Map();

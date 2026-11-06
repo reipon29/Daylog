@@ -3,12 +3,13 @@ import { getPosition, reverseGeocode } from './location.js';
 import { HEALTH_FIELDS, parseHealthText, formatValue } from './health.js';
 import {
   $, esc, uid, dayKey, parseDay, addDays, isDayKey, weekday, fmtTime, fmtDate, fmtRelative,
-  linkify, toast, resizeImage, blobToDataURL, dataURLToBlob, loadLeaflet,
+  linkify, toast, resizeImage, blobToDataURL, dataURLToBlob, loadMapLibre,
 } from './util.js';
 
 /* ================= 設定 ================= */
 const SETTINGS_KEY = 'daylog.settings';
-const DEFAULTS = { name: 'わたし', handle: 'me', autoLocation: true, geocode: true };
+const DEFAULTS = { name: 'わたし', handle: 'me', avatar: '🐣', autoLocation: true, geocode: true };
+const AVATARS = ['🐣', '🐻', '🐰', '🐱', '🐶', '🐼', '🦊', '🐸', '🐧', '🌷', '🍓', '☕️'];
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; }
   catch { return { ...DEFAULTS }; }
@@ -17,7 +18,59 @@ function saveSettings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ }
 }
 let settings = loadSettings();
-const initial = () => Array.from((settings.name || '?').trim())[0] || '?';
+const initial = () => settings.avatar || Array.from((settings.name || '?').trim())[0] || '?';
+
+/* ================= 地図 ================= */
+// OpenFreeMap のベクター地図（APIキー不要・高解像度画面でもくっきり）
+const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+
+// 地図を作り、ピンを置いて、全ピンが入るように表示する
+async function createMap(el, located, { makePin, popupHTML, maxZoom = 15, onLoad }) {
+  const ml = await loadMapLibre();
+  if (!el.isConnected) return;
+  const coords = located.map((p) => [p.loc.lng, p.loc.lat]);
+  const map = new ml.Map({
+    container: el,
+    style: MAP_STYLE,
+    center: coords[0],
+    zoom: maxZoom,
+    attributionControl: { compact: true },
+    cooperativeGestures: false,
+  });
+  maps.push(map);
+  located.forEach((p, i) => {
+    new ml.Marker({ element: makePin(p, i), anchor: 'bottom' })
+      .setLngLat(coords[i])
+      .setPopup(new ml.Popup({ offset: 30, closeButton: false }).setHTML(popupHTML(p)))
+      .addTo(map);
+  });
+  if (coords.length > 1) {
+    const bounds = coords.reduce((b, c) => b.extend(c), new ml.LngLatBounds(coords[0], coords[0]));
+    map.fitBounds(bounds, { padding: 50, maxZoom, duration: 0 });
+  }
+  map.on('load', () => {
+    // 地名を日本語表記に
+    for (const layer of map.getStyle().layers) {
+      // 3Dビルを消してすっきり見せる
+      if (layer.type === 'fill-extrusion') { map.setLayoutProperty(layer.id, 'visibility', 'none'); continue; }
+      if (layer.type !== 'symbol') continue;
+      const tf = map.getLayoutProperty(layer.id, 'text-field');
+      // 道路番号の看板を消す
+      if (tf && JSON.stringify(tf).includes('"ref"')) { map.setLayoutProperty(layer.id, 'visibility', 'none'); continue; }
+      if (tf && JSON.stringify(tf).includes('name')) {
+        map.setLayoutProperty(layer.id, 'text-field', ['coalesce', ['get', 'name:ja'], ['get', 'name']]);
+      }
+    }
+    onLoad?.(map, coords);
+  });
+}
+
+function pinEl(cls, html) {
+  const el = document.createElement('div');
+  el.className = cls;
+  el.innerHTML = html;
+  return el;
+}
 
 /* ================= アイコン ================= */
 const I = {
@@ -160,7 +213,7 @@ function composerHTML({ day } = {}) {
       <div class="thumbs"></div>
       <div class="composer-tools">
         <label class="icon-btn" title="写真を追加">${I.photo}<input type="file" accept="image/*" multiple hidden></label>
-        <button type="button" class="icon-btn loc-toggle" title="位置情報をつける">${I.pin}<span>位置</span></button>
+        <button type="button" class="icon-btn loc-toggle" title="位置情報をつける" aria-label="位置情報をつける">${I.pin}</button>
         ${past ? '' : `<button type="button" class="icon-btn checkin" title="いまいる場所を記録">${I.flag}<span>チェックイン</span></button>`}
         <span class="spacer"></span>
         <span class="count"></span>
@@ -357,8 +410,8 @@ async function renderHome(query, alive) {
       }
     };
     feed.innerHTML = list.length ? '' : (needle
-      ? '<div class="empty"><strong>見つかりませんでした</strong>別のキーワードで試してください</div>'
-      : '<div class="empty"><strong>ようこそ Daylog へ</strong>いまの気持ちや、行った場所をつぶやいてみましょう。</div>');
+      ? '<div class="empty"><span class="emoji">🔍</span><strong>見つかりませんでした</strong>別のキーワードで試してください</div>'
+      : '<div class="empty"><span class="emoji">🐣</span><strong>ようこそ Daylog へ</strong>いまの気持ちや、行った場所をつぶやいてみましょう。</div>');
     more();
   };
   let t;
@@ -386,28 +439,28 @@ async function renderDay(day, alive) {
       <a class="icon-btn" href="#/day/${addDays(day, -1)}" aria-label="前の日">${I.left}</a>
       <div class="date" role="button" tabindex="0">
         <div class="small">${d.getFullYear()}年</div>
-        <div class="big">${d.getMonth() + 1}月${d.getDate()}日</div>
-        <div class="small">${weekday(day)}曜日${day === today ? ' · 今日' : ''}</div>
+        <div class="big">${d.getMonth() + 1}<b>/</b>${d.getDate()}</div>
+        <div class="small">${weekday(day)}曜日${day === today ? '<span class="today-badge">今日</span>' : ''}</div>
         <input type="date" value="${day}" aria-label="日付を選ぶ">
       </div>
       <a class="icon-btn" href="#/day/${addDays(day, 1)}" aria-label="次の日">${I.right}</a>
     </div>
 
-    <h2 class="section-title">からだ</h2>
+    <h2 class="section-title">💗 からだ</h2>
     ${healthHTML(health)}
 
-    <h2 class="section-title">足あと</h2>
+    <h2 class="section-title">🐾 足あと</h2>
     ${located.length ? `
       <div id="daymap" class="map"></div>
       <ol class="places">${located.map((p, i) => `
-        <li><span class="t">${fmtTime(p.createdAt)}</span><span class="n">${i + 1}. <span data-loc-for="${p.id}"><span>${esc(p.loc.name || '（地名を取得できませんでした）')}</span></span></span></li>`).join('')}
-      </ol>` : '<p class="section-sub">この日の位置情報はまだありません。チェックインするとここに地図が出ます。</p>'}
+        <li><span class="num">${i + 1}</span><span class="t">${fmtTime(p.createdAt)}</span><span class="n"><span data-loc-for="${p.id}"><span>${esc(p.loc.name || '（地名を取得できませんでした）')}</span></span></span></li>`).join('')}
+      </ol>` : '<p class="section-sub">この日の足あとはまだありません。おでかけ先でチェックインすると、ここに地図ができます 🐾</p>'}
 
-    <h2 class="section-title">できごと</h2>
+    <h2 class="section-title">📝 できごと</h2>
     ${composerHTML({ day })}
-    <div class="diary">${posts.map((p) => postHTML(p, { diary: true })).join('') || '<p class="section-sub" style="padding-top:12px">まだ何も書かれていません。</p>'}</div>
+    <div class="diary">${posts.map((p) => postHTML(p, { diary: true })).join('') || '<p class="section-sub" style="padding-top:8px">まだ何も書かれていません ✏️</p>'}</div>
 
-    ${past.length ? `<h2 class="section-title">過去の${d.getMonth() + 1}月${d.getDate()}日</h2>${past.map((p) => postHTML(p)).join('')}` : ''}
+    ${past.length ? `<h2 class="section-title">🕰️ 過去の${d.getMonth() + 1}月${d.getDate()}日</h2>${past.map((p) => postHTML(p)).join('')}` : ''}
   `;
 
   const dateBox = view.querySelector('.day-head .date');
@@ -427,10 +480,10 @@ function healthHTML(h) {
       <span class="btn-row"><button class="btn small" data-h="import">取り込む</button><button class="btn small secondary" data-h="edit">手入力</button></span></div>`;
   }
   return `<div class="health-grid">${fields.map((f) => `
-      <div class="health-tile"><div class="label">${f.label}</div>
+      <div class="health-tile"><div class="ico">${f.icon}</div><div class="label">${f.label}</div>
       <div class="value">${formatValue(f, h[f.key])}<span class="unit">${f.unit}</span></div></div>`).join('')}
     </div>
-    <div class="btn-row" style="padding:0 16px 4px"><button class="btn small secondary" data-h="import">取り込む</button><button class="btn small secondary" data-h="edit">編集</button></div>`;
+    <div class="btn-row" style="padding:0 12px 4px"><button class="btn small secondary" data-h="import">取り込む</button><button class="btn small secondary" data-h="edit">編集</button></div>`;
 }
 
 function bindHealthButtons(root, day) {
@@ -442,20 +495,21 @@ function bindHealthButtons(root, day) {
 
 async function drawDayMap(el, located) {
   try {
-    const L = await loadLeaflet();
-    if (!el.isConnected) return;
-    const m = L.map(el, { zoomControl: false });
-    maps.push(m);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(m);
-    const pts = located.map((p) => [p.loc.lat, p.loc.lng]);
-    if (pts.length > 1) L.polyline(pts, { color: '#1d9bf0', weight: 3, opacity: 0.8, dashArray: '6 6' }).addTo(m);
-    located.forEach((p, i) => {
-      L.marker([p.loc.lat, p.loc.lng], { icon: L.divIcon({ className: 'map-pin', html: String(i + 1), iconSize: [24, 24] }) })
-        .addTo(m)
-        .bindPopup(`<b>${fmtTime(p.createdAt)}</b> ${esc(p.loc.name || '')}${p.text ? `<br>${esc(p.text.slice(0, 80))}` : ''}`);
+    await createMap(el, located, {
+      maxZoom: 16,
+      makePin: (p, i) => pinEl('map-pin', `<span><b>${i + 1}</b></span>`),
+      popupHTML: (p) => `<b>${fmtTime(p.createdAt)}</b> ${esc(p.loc.name || '')}${p.text ? `<br>${esc(p.text.slice(0, 80))}` : ''}`,
+      // 移動した順に点線（足あと）でつなぐ
+      onLoad: (map, coords) => {
+        if (coords.length < 2) return;
+        map.addSource('route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } } });
+        map.addLayer({
+          id: 'route', type: 'line', source: 'route',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#ff7aa8', 'line-width': 6, 'line-dasharray': [0, 2] },
+        });
+      },
     });
-    if (pts.length === 1) m.setView(pts[0], 15);
-    else m.fitBounds(pts, { padding: [30, 30], maxZoom: 16 });
   } catch (e) {
     el.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
   }
@@ -490,7 +544,7 @@ async function pasteHealthDialog() {
       <div class="dlg-body">
         <div class="field">
           <span class="help">ショートカットでコピーした内容を貼り付けてください。</span>
-          <textarea name="json" placeholder='{"date":"2026-11-06","steps":8123,"sleep":7.2}'></textarea>
+          <textarea name="json" class="mono" placeholder='{"date":"2026-11-06","steps":8123,"sleep":7.2}'></textarea>
         </div>
       </div>
       <div class="dlg-foot"><button class="btn secondary" value="cancel">キャンセル</button><button class="btn" value="ok">取り込む</button></div>
@@ -575,7 +629,7 @@ async function renderCalendar(ym, alive) {
       <div class="health-tile"><div class="label">書いた日</div><div class="value">${byDay.size}<span class="unit">日</span></div></div>
       <div class="health-tile"><div class="label">平均歩数</div><div class="value">${steps.length ? Math.round(steps.reduce((a, b) => a + b, 0) / steps.length).toLocaleString() : '–'}<span class="unit">歩</span></div></div>
     </div>
-    <p class="section-sub">● 青 = ポスト　● 緑 = 位置情報つき</p>`;
+    <div class="legend"><span><i></i>ポスト</span><span><i class="loc"></i>位置つき</span></div>`;
 }
 
 /* ================= 足あとマップ ================= */
@@ -594,24 +648,16 @@ async function renderMap(range, alive) {
   if (!alive()) return;
 
   if (!located.length) {
-    view.innerHTML = '<div class="empty"><strong>まだ足あとがありません</strong>ポストに位置情報をつけるか、チェックインしてみましょう。</div>';
+    view.innerHTML = '<div class="empty"><span class="emoji">🐾</span><strong>まだ足あとがありません</strong>ポストに位置情報をつけるか、チェックインしてみましょう。</div>';
     return;
   }
   view.innerHTML = '<div id="bigmap" class="map tall"></div>';
   try {
-    const L = await loadLeaflet();
-    if (!alive()) return;
-    const m = L.map($('#bigmap'), { preferCanvas: true });
-    maps.push(m);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(m);
-    const pts = located.map((p) => [p.loc.lat, p.loc.lng]);
-    located.forEach((p) => {
-      L.circleMarker([p.loc.lat, p.loc.lng], { radius: 7, color: '#fff', weight: 2, fillColor: '#1d9bf0', fillOpacity: 0.9 })
-        .addTo(m)
-        .bindPopup(`<a href="#/day/${p.day}"><b>${fmtDate(p.createdAt)} ${fmtTime(p.createdAt)}</b></a><br>${esc(p.loc.name || '')}${p.text ? `<br>${esc(p.text.slice(0, 80))}` : ''}`);
+    await createMap($('#bigmap'), located, {
+      maxZoom: 15,
+      makePin: () => pinEl('paw', '🐾'),
+      popupHTML: (p) => `<a href="#/day/${p.day}"><b>${fmtDate(p.createdAt)} ${fmtTime(p.createdAt)}</b></a><br>${esc(p.loc.name || '')}${p.text ? `<br>${esc(p.text.slice(0, 80))}` : ''}`,
     });
-    if (pts.length === 1) m.setView(pts[0], 14);
-    else m.fitBounds(pts, { padding: [30, 30], maxZoom: 15 });
   } catch (e) {
     view.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
   }
@@ -630,17 +676,24 @@ async function renderSettings(alive) {
 
   view.innerHTML = `
   <div class="settings">
-    <h2 class="section-title">プロフィール</h2>
+    <h2 class="section-title">🐣 プロフィール</h2>
+    <div class="group">
+    <div class="field"><span class="label">アイコン</span>
+      <div class="avatar-pick">${AVATARS.map((a) => `<button type="button" data-av="${a}" class="${a === settings.avatar ? 'sel' : ''}">${a}</button>`).join('')}</div></div>
     <div class="field"><label for="s-name">表示名</label><input id="s-name" type="text" value="${esc(settings.name)}"></div>
     <div class="field"><label for="s-handle">ユーザー名</label><input id="s-handle" type="text" value="${esc(settings.handle)}"></div>
+    </div>
 
-    <h2 class="section-title">位置情報</h2>
+    <h2 class="section-title">📍 位置情報</h2>
+    <div class="group">
     <div class="field row"><div><div class="label">ポストに位置をつける</div><div class="help">新しいポストの位置ボタンを最初からONにします</div></div>
       <label class="switch"><input type="checkbox" id="s-autoloc" ${settings.autoLocation ? 'checked' : ''}><span></span></label></div>
     <div class="field row"><div><div class="label">地名を調べる</div><div class="help">座標を OpenStreetMap に送り、地名に変換します</div></div>
       <label class="switch"><input type="checkbox" id="s-geocode" ${settings.geocode ? 'checked' : ''}><span></span></label></div>
+    </div>
 
-    <h2 class="section-title">ヘルスケア</h2>
+    <h2 class="section-title">💗 ヘルスケア</h2>
+    <div class="group">
     <div class="field">
       <div class="help">iPhone のショートカットで今日のヘルスケアをコピーしてから「クリップボードから取り込む」を押します。</div>
       <div class="btn-row">
@@ -671,18 +724,19 @@ async function renderSettings(alive) {
 }</pre>
       <div class="help">配列で複数日分をまとめて渡すこともできます。詳しくは README を参照。</div>
     </details>
+    </div>
 
-    <h2 class="section-title">バックアップ</h2>
-    <div class="field">
+    <h2 class="section-title">💾 バックアップ</h2>
+    <div class="group"><div class="field">
       <div class="help">データはこの端末の中だけに保存されています。機種変更やもしもに備えて、ときどき書き出してください。${storage ? `<br>${storage}` : ''}</div>
       <div class="btn-row">
         <button class="btn small" id="b-export">書き出す</button>
         <label class="btn small secondary">読み込む<input type="file" id="b-import" accept=".json,application/json" hidden></label>
       </div>
-    </div>
+    </div></div>
 
-    <h2 class="section-title">その他</h2>
-    <div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div>
+    <h2 class="section-title">🧹 その他</h2>
+    <div class="group"><div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div></div>
     <p class="section-sub" style="padding-top:12px">Daylog v1.0</p>
   </div>`;
 
@@ -693,6 +747,14 @@ async function renderSettings(alive) {
   });
   bindText('#s-name', 'name');
   bindText('#s-handle', 'handle');
+  view.querySelector('.avatar-pick').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-av]');
+    if (!b) return;
+    settings.avatar = b.dataset.av;
+    saveSettings();
+    view.querySelectorAll('[data-av]').forEach((x) => x.classList.toggle('sel', x === b));
+    toast(`アイコンを ${b.dataset.av} にしました`);
+  });
   $('#s-autoloc').addEventListener('change', (e) => {
     settings.autoLocation = e.target.checked;
     saveSettings();

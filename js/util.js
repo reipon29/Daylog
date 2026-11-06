@@ -85,21 +85,21 @@ export const blobToDataURL = (blob) => new Promise((resolve, reject) => {
 });
 export const dataURLToBlob = async (url) => (await fetch(url)).blob();
 
-let leafletPromise;
-// 地図ライブラリは必要になったときだけ読み込む
-export function loadLeaflet() {
-  if (window.L) return Promise.resolve(window.L);
-  if (leafletPromise) return leafletPromise;
-  leafletPromise = new Promise((resolve, reject) => {
+let mapLibPromise;
+// 地図ライブラリ（MapLibre GL：ベクター地図なので高解像度画面でもくっきり）は必要になったときだけ読み込む
+export function loadMapLibre() {
+  if (window.maplibregl) return Promise.resolve(window.maplibregl);
+  if (mapLibPromise) return mapLibPromise;
+  mapLibPromise = new Promise((resolve, reject) => {
     const css = document.createElement('link');
     css.rel = 'stylesheet';
-    css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+    css.href = 'https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css';
     document.head.appendChild(css);
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
-    s.onload = () => resolve(window.L);
-    s.onerror = () => { leafletPromise = null; reject(new Error('地図を読み込めませんでした')); };
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js';
+    s.onload = () => resolve(window.maplibregl);
+    s.onerror = () => { mapLibPromise = null; reject(new Error('地図を読み込めませんでした')); };
     document.head.appendChild(s);
   });
-  return leafletPromise;
+  return mapLibPromise;
 }

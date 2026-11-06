@@ -110,7 +110,7 @@ js/util.js            共通関数
 icons/                アプリアイコン
 ```
 
-地図は [Leaflet](https://leafletjs.com/) と © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors を使用しています。
+地図は [MapLibre GL JS](https://maplibre.org/) と [OpenFreeMap](https://openfreemap.org/)（© [OpenMapTiles](https://openmaptiles.org/) © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors）を使用しています。ベクター地図なので高解像度の画面でもくっきり表示され、APIキーも不要です。
 
 ## 今後のアイデア
 

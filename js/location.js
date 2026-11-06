@@ -9,7 +9,7 @@ export function getPosition({ timeout = 12000 } = {}) {
         acc: Math.round(p.coords.accuracy),
       }),
       (err) => reject(new Error(err.code === 1 ? '位置情報の利用が許可されていません' : '現在地を取得できませんでした')),
-      { enableHighAccuracy: true, timeout, maximumAge: 60_000 },
+      { enableHighAccuracy: true, timeout, maximumAge: 0 },
     );
   });
 }

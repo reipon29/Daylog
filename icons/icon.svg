@@ -1,9 +1,46 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#ff8fb5"/>
-  <rect x="136" y="112" width="240" height="288" rx="28" fill="#ffffff"/>
-  <rect x="136" y="112" width="44" height="288" rx="14" fill="#ffd9e6"/>
-  <rect x="212" y="176" width="128" height="18" rx="9" fill="#ff7aa8"/>
-  <rect x="212" y="222" width="128" height="18" rx="9" fill="#ffc2d6"/>
-  <rect x="212" y="268" width="88" height="18" rx="9" fill="#ffc2d6"/>
-  <circle cx="318" cy="336" r="22" fill="#5fd0a5"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9edcff"/>
+      <stop offset="1" stop-color="#4fb0f5"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- ふわふわ雲 -->
+  <g fill="#ffffff" opacity=".55">
+    <circle cx="78" cy="418" r="34"/><circle cx="120" cy="404" r="42"/><circle cx="166" cy="424" r="30"/>
+    <circle cx="396" cy="96" r="24"/><circle cx="428" cy="84" r="30"/><circle cx="458" cy="100" r="20"/>
+  </g>
+
+  <!-- きらきら -->
+  <g fill="#ffffff">
+    <path d="M92 120 l8 20 20 8 -20 8 -8 20 -8 -20 -20 -8 20 -8z"/>
+    <path d="M420 330 l6 14 14 6 -14 6 -6 14 -6 -14 -14 -6 14 -6z"/>
+  </g>
+
+  <!-- ノートの影 -->
+  <rect x="134" y="130" width="252" height="286" rx="56" fill="#2f86cf" opacity=".25"/>
+  <!-- ノート本体 -->
+  <rect x="128" y="116" width="252" height="286" rx="56" fill="#ffffff"/>
+  <!-- しおり -->
+  <path d="M318 116 h30 v62 l-15 -12 -15 12z" fill="#ff8fb5"/>
+  <!-- リング -->
+  <g fill="#bfe5ff" stroke="#ffffff" stroke-width="6">
+    <rect x="170" y="92" width="22" height="50" rx="11"/>
+    <rect x="222" y="92" width="22" height="50" rx="11"/>
+    <rect x="274" y="92" width="22" height="50" rx="11"/>
+  </g>
+
+  <!-- 顔 -->
+  <ellipse cx="208" cy="262" rx="17" ry="20" fill="#2f4058"/>
+  <ellipse cx="300" cy="262" rx="17" ry="20" fill="#2f4058"/>
+  <circle cx="214" cy="254" r="6" fill="#ffffff"/>
+  <circle cx="306" cy="254" r="6" fill="#ffffff"/>
+  <ellipse cx="176" cy="306" rx="24" ry="14" fill="#ffb8cf"/>
+  <ellipse cx="332" cy="306" rx="24" ry="14" fill="#ffb8cf"/>
+  <path d="M236 298 q18 20 36 0" fill="none" stroke="#2f4058" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- ハート -->
+  <path d="M254 364 c-10 -14 -30 -6 -24 10 c4 10 24 22 24 22 s20 -12 24 -22 c6 -16 -14 -24 -24 -10z" fill="#ff8fb5"/>
 </svg>

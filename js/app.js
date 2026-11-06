@@ -3,13 +3,13 @@ import { getPosition, reverseGeocode } from './location.js';
 import { HEALTH_FIELDS, parseHealthText, formatValue } from './health.js';
 import {
   $, esc, uid, dayKey, parseDay, addDays, isDayKey, weekday, fmtTime, fmtDate, fmtRelative,
-  linkify, toast, resizeImage, blobToDataURL, dataURLToBlob, loadMapLibre,
+  linkify, toast, resizeImage, blobToDataURL, dataURLToBlob, loadMapLibre, squareImageDataURL,
 } from './util.js';
 
 /* ================= 設定 ================= */
 const SETTINGS_KEY = 'daylog.settings';
-const DEFAULTS = { name: 'わたし', handle: 'me', avatar: '🐣', autoLocation: true, geocode: true };
-const AVATARS = ['🐣', '🐻', '🐰', '🐱', '🐶', '🐼', '🦊', '🐸', '🐧', '🌷', '🍓', '☕️'];
+const DEFAULTS = { name: 'わたし', handle: 'me', avatar: '🐳', avatarImage: '', autoLocation: true, geocode: true };
+const AVATARS = ['🐳', '🐬', '🐧', '☁️', '🐣', '🐻', '🐰', '🐱', '🐶', '🐼', '🦊', '🐸', '🌷', '🍓', '☕️'];
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; }
   catch { return { ...DEFAULTS }; }
@@ -19,6 +19,8 @@ function saveSettings() {
 }
 let settings = loadSettings();
 const initial = () => settings.avatar || Array.from((settings.name || '?').trim())[0] || '?';
+// アイコン：画像が設定されていれば画像、なければ絵文字
+const avatarHTML = () => (settings.avatarImage ? `<img src="${settings.avatarImage}" alt="">` : esc(initial()));
 
 /* ================= 地図 ================= */
 // OpenFreeMap のベクター地図（APIキー不要・高解像度画面でもくっきり）
@@ -151,7 +153,7 @@ function postHTML(p, { diary = false } = {}) {
     : `<a class="time" href="#/day/${p.day}">${fmtRelative(p.createdAt)}</a>`;
   return `
   <article class="post ${p.kind === 'checkin' ? 'checkin' : ''}" data-id="${p.id}">
-    <div class="avatar">${p.kind === 'checkin' ? I.flag : esc(initial())}</div>
+    <div class="avatar">${p.kind === 'checkin' ? I.flag : avatarHTML()}</div>
     <div class="post-main">
       <div class="post-head"><span class="name">${esc(settings.name)}</span><span>@${esc(settings.handle)}</span><span>·</span>${time}</div>
       ${text}${media}${loc}
@@ -206,7 +208,7 @@ function composerHTML({ day } = {}) {
   const past = day && day !== today;
   return `
   <form class="composer" autocomplete="off">
-    <div class="avatar">${esc(initial())}</div>
+    <div class="avatar">${avatarHTML()}</div>
     <div class="composer-body">
       ${past ? `<div class="when">${fmtDate(parseDay(day).getTime())} の日記として記録</div>` : ''}
       <textarea name="text" rows="2" placeholder="${day ? 'この日のできごとは？' : 'いまどうしてる？'}"></textarea>
@@ -506,7 +508,7 @@ async function drawDayMap(el, located) {
         map.addLayer({
           id: 'route', type: 'line', source: 'route',
           layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-color': '#ff7aa8', 'line-width': 6, 'line-dasharray': [0, 2] },
+          paint: { 'line-color': '#3fa9f5', 'line-width': 6, 'line-dasharray': [0, 2] },
         });
       },
     });
@@ -676,10 +678,13 @@ async function renderSettings(alive) {
 
   view.innerHTML = `
   <div class="settings">
-    <h2 class="section-title">🐣 プロフィール</h2>
+    <h2 class="section-title">🐳 プロフィール</h2>
     <div class="group">
     <div class="field"><span class="label">アイコン</span>
-      <div class="avatar-pick">${AVATARS.map((a) => `<button type="button" data-av="${a}" class="${a === settings.avatar ? 'sel' : ''}">${a}</button>`).join('')}</div></div>
+      <div class="avatar-pick">
+        <label class="upload ${settings.avatarImage ? 'sel' : ''}" title="好きな画像を選ぶ">${settings.avatarImage ? `<img src="${settings.avatarImage}" alt="">` : I.photo}<input type="file" id="s-avatar" accept="image/*" hidden></label>
+        ${AVATARS.map((a) => `<button type="button" data-av="${a}" class="${!settings.avatarImage && a === settings.avatar ? 'sel' : ''}">${a}</button>`).join('')}</div>
+      <div class="help">左端の📷から好きな画像を選べます（正方形に切り抜かれます）</div></div>
     <div class="field"><label for="s-name">表示名</label><input id="s-name" type="text" value="${esc(settings.name)}"></div>
     <div class="field"><label for="s-handle">ユーザー名</label><input id="s-handle" type="text" value="${esc(settings.handle)}"></div>
     </div>
@@ -751,9 +756,23 @@ async function renderSettings(alive) {
     const b = e.target.closest('[data-av]');
     if (!b) return;
     settings.avatar = b.dataset.av;
+    settings.avatarImage = '';
     saveSettings();
-    view.querySelectorAll('[data-av]').forEach((x) => x.classList.toggle('sel', x === b));
     toast(`アイコンを ${b.dataset.av} にしました`);
+    router();
+  });
+  $('#s-avatar').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      settings.avatarImage = await squareImageDataURL(file);
+      saveSettings();
+      toast('アイコンを変更しました');
+      router();
+    } catch {
+      toast('画像を読み込めませんでした');
+    }
   });
   $('#s-autoloc').addEventListener('change', (e) => {
     settings.autoLocation = e.target.checked;
@@ -795,6 +814,7 @@ async function exportBackup() {
     exportedAt: new Date().toISOString(),
     posts: await Promise.all(posts.map(async (p) => ({ ...p, photos: await Promise.all((p.photos || []).map(blobToDataURL)) }))),
     health,
+    settings,
   };
   const name = `daylog-backup-${dayKey()}.json`;
   const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
@@ -818,6 +838,7 @@ async function importBackup(file) {
       await db.putPost({ ...p, photos: await Promise.all((p.photos || []).map(dataURLToBlob)) });
     }
     for (const h of data.health || []) await db.putHealth(h);
+    if (data.settings) { settings = { ...DEFAULTS, ...data.settings }; saveSettings(); }
     toast(`${(data.posts || []).length}件のポストを読み込みました`);
     router();
   } catch (e) {

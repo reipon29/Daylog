@@ -77,6 +77,16 @@ export async function resizeImage(file, max = 1600, quality = 0.82) {
   return new Promise((resolve) => canvas.toBlob((b) => resolve(b || file), 'image/jpeg', quality));
 }
 
+// 画像を中央で正方形に切り抜いて縮小し、dataURL で返す（アイコン用）
+export async function squareImageDataURL(file, size = 256) {
+  const bmp = await createImageBitmap(file);
+  const side = Math.min(bmp.width, bmp.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  canvas.getContext('2d').drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, size, size);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
 export const blobToDataURL = (blob) => new Promise((resolve, reject) => {
   const r = new FileReader();
   r.onload = () => resolve(r.result);

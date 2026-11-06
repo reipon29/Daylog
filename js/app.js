@@ -1,6 +1,7 @@
 import { db } from './db.js';
 import { getPosition, reverseGeocode } from './location.js';
 import { readExif } from './exif.js';
+import { fetchWeather, weatherInfo } from './weather.js';
 import {
   $, esc, uid, dayKey, parseDay, addDays, isDayKey, weekday, fmtTime, fmtDate, fmtRelative,
   linkify, toast, resizeImage, blobToDataURL, dataURLToBlob, loadMapLibre, squareImageDataURL,
@@ -8,7 +9,7 @@ import {
 
 /* ================= 設定 ================= */
 const SETTINGS_KEY = 'daylog.settings';
-const DEFAULTS = { name: 'わたし', handle: 'me', avatarImage: '', autoLocation: true, geocode: true };
+const DEFAULTS = { name: 'わたし', handle: 'me', avatarImage: '', autoLocation: true, geocode: true, weather: true };
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; }
   catch { return { ...DEFAULTS }; }
@@ -86,6 +87,51 @@ const I = {
   left: '<svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg>',
   right: '<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>',
 };
+
+/* ================= 今日の気分 ================= */
+const MOODS = [
+  { v: 5, e: '😆', label: '最高' },
+  { v: 4, e: '😊', label: 'いい' },
+  { v: 3, e: '🙂', label: 'ふつう' },
+  { v: 2, e: '😔', label: 'いまいち' },
+  { v: 1, e: '😢', label: 'つらい' },
+];
+const moodOf = (v) => MOODS.find((m) => m.v === v) || null;
+
+function moodButtonsHTML(current) {
+  return MOODS.map((m) => `<button type="button" class="mood-btn ${current === m.v ? 'sel' : ''}" data-mood="${m.v}" aria-label="${m.label}">
+    <span class="e">${m.e}</span><span class="l">${m.label}</span></button>`).join('');
+}
+
+// 気分ボタンの動作。同じ気分をもう一度押すと取り消し
+function bindMoodButtons(root, date, onChange) {
+  root.querySelectorAll('[data-mood]').forEach((b) => b.addEventListener('click', async () => {
+    const rec = (await db.getDay(date)) || { date };
+    const v = Number(b.dataset.mood);
+    rec.mood = rec.mood === v ? null : v;
+    rec.updatedAt = Date.now();
+    await db.putDay(rec);
+    root.querySelectorAll('[data-mood]').forEach((x) => x.classList.toggle('sel', Number(x.dataset.mood) === rec.mood));
+    onChange?.(rec.mood);
+  }));
+}
+
+/* ================= 連続記録 ================= */
+function streakOf(posts) {
+  const days = new Set(posts.map((p) => p.day));
+  const today = dayKey();
+  let cur = 0;
+  for (let d = days.has(today) ? today : addDays(today, -1); days.has(d); d = addDays(d, -1)) cur++;
+  let best = 0;
+  let run = 0;
+  let prev = null;
+  for (const d of [...days].sort()) {
+    run = prev && addDays(prev, 1) === d ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = d;
+  }
+  return { current: cur, best, todayDone: days.has(today) };
+}
 
 /* ================= 描画まわり ================= */
 const view = $('#view');
@@ -174,7 +220,7 @@ function postHTML(p, { diary = false } = {}) {
   <article class="post ${p.kind === 'checkin' ? 'checkin' : ''}" data-id="${p.id}">
     <div class="avatar">${p.kind === 'checkin' ? I.flag : avatarHTML()}</div>
     <div class="post-main">
-      <div class="post-head"><span class="name">${esc(settings.name)}</span><span>@${esc(settings.handle)}</span><span>·</span>${time}</div>
+      <div class="post-head"><span class="name">${esc(settings.name)}</span><span>@${esc(settings.handle)}</span><span>·</span>${time}<span class="wx" data-wx-for="${p.id}">${wxText(p.weather)}</span></div>
       ${text}${media}${loc}
       <div class="post-actions">
         <a class="icon-btn" href="#/day/${p.day}" title="この日の日記帳">${I.book}</a>
@@ -215,6 +261,7 @@ async function createPost({ text, photos = [], withLoc, day, kind = 'post', at, 
 
   // 地名はあとから非同期で付与
   if (loc && settings.geocode) nameLocation(post.id, loc);
+  if (loc && settings.weather) addWeather(post.id);
   return post;
 }
 
@@ -228,14 +275,33 @@ async function nameLocation(id, loc) {
   if (name) document.querySelectorAll(`[data-loc-for="${id}"] span`).forEach((el) => { el.textContent = name; });
 }
 
-// 電波が悪くて地名が付かなかったポストに、あとから地名を付ける
+// 電波が悪くて地名・天気が付かなかったポストに、あとから付ける
 async function retryMissingNames() {
-  if (!settings.geocode || !navigator.onLine) return;
+  if (!navigator.onLine) return;
   const dayAgo = Date.now() - 86400000;
-  const todo = (await db.allPosts())
-    .filter((p) => p.loc && !p.loc.name && !(p.loc.geoTriedAt > dayAgo))
-    .slice(0, 20);
-  for (const p of todo) await nameLocation(p.id, p.loc);
+  const posts = await db.allPosts();
+  if (settings.geocode) {
+    const todo = posts.filter((p) => p.loc && !p.loc.name && !(p.loc.geoTriedAt > dayAgo)).slice(0, 20);
+    for (const p of todo) await nameLocation(p.id, p.loc);
+  }
+  if (settings.weather) {
+    const todo = posts.filter((p) => p.loc && !p.weather && !(p.weatherTriedAt > dayAgo)).slice(0, 20);
+    for (const p of todo) await addWeather(p.id);
+  }
+}
+
+const wxText = (w) => (w ? `${weatherInfo(w.code).emoji} ${w.temp}℃` : '');
+
+// 天気をあとから非同期で付与
+async function addWeather(id) {
+  const p = await db.getPost(id);
+  if (!p?.loc) return;
+  const w = await fetchWeather(p.loc.lat, p.loc.lng, p.createdAt);
+  const cur = await db.getPost(id);
+  if (!cur) return;
+  if (w) { cur.weather = w; delete cur.weatherTriedAt; } else cur.weatherTriedAt = Date.now();
+  await db.putPost(cur);
+  if (w) document.querySelectorAll(`[data-wx-for="${id}"]`).forEach((el) => { el.textContent = wxText(w); });
 }
 
 /* ---------- 投稿フォーム ---------- */
@@ -445,16 +511,32 @@ function openDialog(html, cls = '') {
 const PAGE = 40;
 
 async function renderHome(query, alive) {
-  setChrome(query ? '検索' : 'ホーム', 'home');
-  const posts = (await db.allPosts()).sort((a, b) => b.createdAt - a.createdAt);
+  const [posts, todayRec] = await Promise.all([db.allPosts(), db.getDay(dayKey())]);
   if (!alive()) return;
+  posts.sort((a, b) => b.createdAt - a.createdAt);
+  const st = streakOf(posts);
+  setChrome(query ? '検索' : 'ホーム', 'home', !query && st.current
+    ? `<button class="streak ${st.todayDone ? '' : 'pending'}" id="streak">🔥 ${st.current}日</button>` : '');
+  $('#streak')?.addEventListener('click', () => toast(st.todayDone
+    ? `${st.current}日連続で記録中！（最長 ${st.best}日）`
+    : `今日書くと${st.current + 1}日連続！（最長 ${st.best}日）`, 3500));
 
   view.innerHTML = `
     ${query ? '' : backupNoticeHTML(posts)}
+    ${query || todayRec?.mood ? '' : `<div class="mood-card"><b>今日の気分は？</b><div class="moods">${moodButtonsHTML(null)}</div></div>`}
     ${query ? '' : composerHTML()}
     <div class="search"><input type="search" placeholder="キーワード・#タグ・場所で検索" value="${esc(query)}"></div>
     <div id="feed"></div>`;
   if (!query) bindComposer(view.querySelector('.composer'), { onPosted: router });
+  const moodCard = view.querySelector('.mood-card');
+  if (moodCard) {
+    bindMoodButtons(moodCard, dayKey(), (v) => {
+      if (!v) return;
+      toast(`今日の気分を「${moodOf(v).label}」で記録しました`);
+      moodCard.classList.add('done');
+      setTimeout(() => moodCard.remove(), 400);
+    });
+  }
   view.querySelectorAll('[data-bk]').forEach((b) => b.addEventListener('click', async () => {
     if (b.dataset.bk === 'now') {
       await exportBackup();
@@ -500,9 +582,14 @@ async function renderHome(query, alive) {
 async function renderDay(day, alive) {
   const today = dayKey();
   setChrome('日記帳', 'day', day !== today ? '<a class="btn small secondary" href="#/day">今日</a>' : '');
-  const [posts, all] = await Promise.all([db.postsByDay(day), db.allPosts()]);
+  const [posts, all, dayRec] = await Promise.all([db.postsByDay(day), db.allPosts(), db.getDay(day)]);
   if (!alive()) return;
   posts.sort((a, b) => a.createdAt - b.createdAt);
+  // その日の天気：昼に近い投稿の天気 ＋ 気温の幅
+  const wxPosts = posts.filter((p) => p.weather);
+  const mainWx = wxPosts.slice().sort((a, b) => Math.abs(new Date(a.createdAt).getHours() - 13) - Math.abs(new Date(b.createdAt).getHours() - 13))[0]?.weather;
+  const temps = wxPosts.map((p) => p.weather.temp);
+  const dayWx = mainWx ? `${weatherInfo(mainWx.code).emoji} ${weatherInfo(mainWx.code).label}　${Math.min(...temps) === Math.max(...temps) ? `${temps[0]}℃` : `${Math.min(...temps)}〜${Math.max(...temps)}℃`}` : '';
   const md = day.slice(5);
   const past = all.filter((p) => p.day.slice(5) === md && p.day < day).sort((a, b) => b.createdAt - a.createdAt);
   const located = posts.filter((p) => p.loc);
@@ -510,14 +597,21 @@ async function renderDay(day, alive) {
 
   view.innerHTML = `
     <div class="day-head">
-      <a class="icon-btn" href="#/day/${addDays(day, -1)}" aria-label="前の日">${I.left}</a>
-      <div class="date" role="button" tabindex="0">
-        <div class="small">${d.getFullYear()}年</div>
-        <div class="big">${d.getMonth() + 1}<b>/</b>${d.getDate()}</div>
-        <div class="small">${weekday(day)}曜日${day === today ? '<span class="today-badge">今日</span>' : ''}</div>
-        <input type="date" value="${day}" aria-label="日付を選ぶ">
+      <div class="day-nav">
+        <a class="icon-btn" href="#/day/${addDays(day, -1)}" aria-label="前の日">${I.left}</a>
+        <div class="date" role="button" tabindex="0">
+          <div class="small">${d.getFullYear()}年</div>
+          <div class="big">${d.getMonth() + 1}<b>/</b>${d.getDate()}</div>
+          <div class="small">${weekday(day)}曜日${day === today ? '<span class="today-badge">今日</span>' : ''}</div>
+          ${dayWx ? `<div class="day-wx">${dayWx}</div>` : ''}
+          <input type="date" value="${day}" aria-label="日付を選ぶ">
+        </div>
+        <a class="icon-btn" href="#/day/${addDays(day, 1)}" aria-label="次の日">${I.right}</a>
       </div>
-      <a class="icon-btn" href="#/day/${addDays(day, 1)}" aria-label="次の日">${I.right}</a>
+      <div class="mood-row">
+        <span class="mood-q">${day === today ? '今日' : 'この日'}の気分</span>
+        <div class="moods">${moodButtonsHTML(dayRec?.mood ?? null)}</div>
+      </div>
     </div>
 
     <h2 class="section-title">📝 できごと</h2>
@@ -535,6 +629,7 @@ async function renderDay(day, alive) {
     ${past.length ? `<h2 class="section-title">🕰️ 過去の${d.getMonth() + 1}月${d.getDate()}日</h2>${past.map((p) => postHTML(p)).join('')}` : ''}
   `;
 
+  bindMoodButtons(view.querySelector('.mood-row'), day);
   const dateBox = view.querySelector('.day-head .date');
   const dateInput = dateBox.querySelector('input');
   dateBox.addEventListener('click', () => { try { dateInput.showPicker(); } catch { dateInput.focus(); } });
@@ -615,8 +710,10 @@ async function renderCalendar(ym, alive) {
   if (!/^\d{4}-\d{2}$/.test(ym)) ym = thisMonth;
   setChrome('カレンダー', 'calendar', ym !== thisMonth ? '<a class="btn small secondary" href="#/calendar">今月</a>' : '');
   const [y, m] = ym.split('-').map(Number);
-  const posts = await db.allPosts();
+  const [posts, dayRecs] = await Promise.all([db.allPosts(), db.allDays()]);
   if (!alive()) return;
+  const moods = new Map(dayRecs.filter((r) => r.mood).map((r) => [r.date, r.mood]));
+  const st = streakOf(posts);
 
   const byDay = new Map();
   for (const p of posts) {
@@ -640,8 +737,10 @@ async function renderCalendar(ym, alive) {
     const key = `${ym}-${String(dd).padStart(2, '0')}`;
     const e = byDay.get(key);
     const dots = e ? Array.from({ length: Math.min(e.n, 6) }, (_, i) => `<i class="${i < e.loc ? 'loc' : ''}"></i>`).join('') : '';
+    const mood = moodOf(moods.get(key));
     cells += `<a href="#/day/${key}" class="${e ? 'has' : ''} ${key === today ? 'today' : ''}">
       <span class="d">${dd}</span>
+      ${mood ? `<span class="mood" title="${mood.label}">${mood.e}</span>` : ''}
       <span class="dots">${dots}</span></a>`;
   }
 
@@ -656,8 +755,20 @@ async function renderCalendar(ym, alive) {
       <div class="stat-tile"><div class="label">ポスト</div><div class="value">${monthPosts}<span class="unit">件</span></div></div>
       <div class="stat-tile"><div class="label">書いた日</div><div class="value">${byDay.size}<span class="unit">日</span></div></div>
       <div class="stat-tile"><div class="label">足あと</div><div class="value">${[...byDay.values()].reduce((n, e) => n + e.loc, 0)}<span class="unit">か所</span></div></div>
+      <div class="stat-tile"><div class="label">🔥 連続記録</div><div class="value">${st.current}<span class="unit">日</span></div></div>
+      <div class="stat-tile"><div class="label">最長記録</div><div class="value">${st.best}<span class="unit">日</span></div></div>
+      <div class="stat-tile"><div class="label">今月の気分</div><div class="value">${monthMood(moods, ym)}</div></div>
     </div>
     <div class="legend"><span><i></i>ポスト</span><span><i class="loc"></i>位置つき</span></div>`;
+}
+
+// その月でいちばん多かった気分
+function monthMood(moods, ym) {
+  const count = new Map();
+  for (const [d, v] of moods) if (d.startsWith(ym)) count.set(v, (count.get(v) || 0) + 1);
+  if (!count.size) return '–';
+  const [v] = [...count].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0];
+  return `<span class="mood-big">${moodOf(v).e}</span><span class="unit">${moodOf(v).label}</span>`;
 }
 
 /* ================= 足あとマップ ================= */
@@ -728,6 +839,9 @@ async function renderSettings(alive) {
       <details class="howto">
         <summary>日記帳・カレンダー・足あと</summary>
         <ul>
+          <li><b>今日の気分</b>：ホームの「今日の気分は？」か、日記帳の日付の下で 😆〜😢 を選びます。もう一度押すと取り消し。カレンダーにも表示されます。</li>
+          <li><b>天気</b>：位置つきで投稿すると、その時の天気と気温が自動で記録されます（投稿の時刻の横と、日記帳の日付の下に表示）。</li>
+          <li><b>🔥 連続記録</b>：毎日投稿すると、ホーム右上に何日続いているかが出ます。タップすると最長記録も見られます。</li>
           <li><b>日記帳</b>：1日1ページ。その日のできごとと、行った場所の地図が並びます。下には「過去の同じ日」も出ます。</li>
           <li>‹ › で前後の日へ。真ん中の日付をタップすると日付を選べます。</li>
           <li>過去の日のページで書くと、その日の日記として残せます。</li>
@@ -747,7 +861,7 @@ async function renderSettings(alive) {
         <summary>データとバックアップ</summary>
         <ul>
           <li>日記・写真はこの iPhone の中だけに保存され、どこにも送られません。</li>
-          <li>場所の名前を調べるときだけ、座標が OpenStreetMap に送られます（下の「地名を調べる」でオフにできます）。</li>
+          <li>場所の名前を調べるときは座標が OpenStreetMap に、天気を調べるときはおおよその場所（約1km）と日時が Open-Meteo に送られます。どちらも下の位置情報の設定でオフにできます。</li>
           <li>iPhone が壊れたり、ホーム画面からアプリを消したりすると日記も消えます。ときどき <b>バックアップ → 書き出す</b> で保存してください。2週間たつとホームでお知らせします。</li>
           <li>機種変更のときは、書き出したファイルを新しい iPhone で <b>読み込む</b>。</li>
         </ul>
@@ -777,6 +891,8 @@ async function renderSettings(alive) {
       <label class="switch"><input type="checkbox" id="s-autoloc" ${settings.autoLocation ? 'checked' : ''}><span></span></label></div>
     <div class="field row"><div><div class="label">地名を調べる</div><div class="help">座標を OpenStreetMap に送り、地名に変換します</div></div>
       <label class="switch"><input type="checkbox" id="s-geocode" ${settings.geocode ? 'checked' : ''}><span></span></label></div>
+    <div class="field row"><div><div class="label">天気を記録する</div><div class="help">位置つきで投稿したとき、おおよその場所（約1km）と日時を Open-Meteo に送り、天気と気温を調べます</div></div>
+      <label class="switch"><input type="checkbox" id="s-weather" ${settings.weather ? 'checked' : ''}><span></span></label></div>
     </div>
 
     <h2 class="section-title">💾 バックアップ</h2>
@@ -791,7 +907,7 @@ async function renderSettings(alive) {
 
     <h2 class="section-title">🧹 その他</h2>
     <div class="group"><div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div></div>
-    <p class="section-sub" style="padding-top:12px">Daylog v1.2</p>
+    <p class="section-sub" style="padding-top:12px">Daylog v1.3</p>
   </div>`;
 
   const bindText = (id, key) => $(id).addEventListener('change', (e) => {
@@ -826,6 +942,7 @@ async function renderSettings(alive) {
     if (e.target.checked) getPosition().catch((err) => toast(err.message)); // 許可ダイアログを先に出す
   });
   $('#s-geocode').addEventListener('change', (e) => { settings.geocode = e.target.checked; saveSettings(); });
+  $('#s-weather').addEventListener('change', (e) => { settings.weather = e.target.checked; saveSettings(); });
 
   $('#b-export').addEventListener('click', exportBackup);
   $('#b-import').addEventListener('change', async (e) => {
@@ -874,6 +991,7 @@ async function exportBackup() {
     exportedAt: new Date().toISOString(),
     posts: await Promise.all(posts.map(async (p) => ({ ...p, photos: await photosOf(p) }))),
     health,
+    days: await db.allDays(),
     settings,
   };
   const name = `daylog-backup-${dayKey()}.json`;
@@ -904,6 +1022,7 @@ async function importBackup(file) {
       await db.putPost({ ...p, photos: ids });
     }
     for (const h of data.health || []) await db.putHealth(h);
+    for (const d of data.days || []) await db.putDay(d);
     if (data.settings) { settings = { ...DEFAULTS, ...data.settings }; saveSettings(); }
     toast(`${(data.posts || []).length}件のポストを読み込みました`);
     router();

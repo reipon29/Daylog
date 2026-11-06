@@ -3,10 +3,11 @@
 // v1: posts（写真の Blob をポストの中に保存）/ health
 // v2: 写真を photos ストアに分離し、ポストには写真の ID だけを持たせる。
 //     → 一覧表示で写真を全部読み込まずに済むので、写真が増えても軽い。
+// v3: days ストアを追加（日ごとの記録：今日の気分など）
 import { uid } from './util.js';
 
 const DB_NAME = 'daylog';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise;
 
@@ -27,6 +28,9 @@ function open() {
       }
       if (!db.objectStoreNames.contains('photos')) {
         db.createObjectStore('photos', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('days')) {
+        db.createObjectStore('days', { keyPath: 'date' });
       }
       // v1 → v2：ポスト内の写真を photos ストアへ移す
       if (e.oldVersion >= 1 && e.oldVersion < 2) {
@@ -88,6 +92,11 @@ export const db = {
   getPhoto: async (id) => (await run('photos', 'readonly', (s) => s.get(id)))?.blob || null,
   deletePhoto: (id) => run('photos', 'readwrite', (s) => s.delete(id)),
 
+  // 日ごとの記録（気分など）
+  getDay: (date) => run('days', 'readonly', (s) => s.get(date)),
+  putDay: (d) => run('days', 'readwrite', (s) => s.put(d)),
+  allDays: () => run('days', 'readonly', (s) => s.getAll()),
+
   putHealth: (h) => run('health', 'readwrite', (s) => s.put(h)),
   getHealth: (date) => run('health', 'readonly', (s) => s.get(date)),
   allHealth: () => run('health', 'readonly', (s) => s.getAll()),
@@ -95,6 +104,7 @@ export const db = {
   async clearAll() {
     await run('posts', 'readwrite', (s) => s.clear());
     await run('photos', 'readwrite', (s) => s.clear());
+    await run('days', 'readwrite', (s) => s.clear());
     await run('health', 'readwrite', (s) => s.clear());
   },
 };

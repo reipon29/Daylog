@@ -167,7 +167,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .section-sub { font-size: 13px; color: var(--muted); padding: 0 18px 8px; margin: 0; }
 
 /* ---------- day (diary page) ---------- */
-.day-head { display: flex; align-items: center; justify-content: space-between; margin: 8px 12px 4px; padding: 14px 8px; border-radius: 28px; box-shadow: var(--shadow); background: linear-gradient(160deg, var(--tint1), var(--card) 60%); }
+.day-head { margin: 8px 12px 4px; padding: 14px 8px 12px; border-radius: 28px; box-shadow: var(--shadow); background: linear-gradient(160deg, var(--tint1), var(--card) 60%); }
 .day-head .date { text-align: center; cursor: pointer; position: relative; }
 .day-head .date .big { font-size: 36px; font-weight: 900; line-height: 1.15; }
 .day-head .date .big b { color: var(--accent); }
@@ -321,3 +321,35 @@ input, textarea, select { font-size: 16px !important; }
 .guide details.howto ul { padding-left: 18px; margin: 8px 0 4px; }
 .guide details.howto li { margin: 6px 0; line-height: 1.6; }
 .group.guide > details.howto:first-child { border-top: 0; }
+
+/* ---------- 日記帳の見出し（日付・天気・気分） ---------- */
+.day-nav { display: flex; align-items: center; justify-content: space-between; }
+.day-wx { font-size: 13px; font-weight: 700; color: var(--text); margin-top: 2px; }
+.mood-row { margin-top: 10px; padding-top: 10px; border-top: 1.5px dashed var(--border); text-align: center; }
+.mood-q { font-size: 12px; font-weight: 700; color: var(--muted); }
+.moods { display: flex; justify-content: center; gap: 4px; margin-top: 4px; }
+.mood-btn { border: 0; background: transparent; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 6px; border-radius: 14px; min-width: 52px; transition: transform .12s, background .15s; }
+.mood-btn .e { font-size: 26px; line-height: 1.1; filter: grayscale(.6); opacity: .6; transition: .15s; }
+.mood-btn .l { font-size: 10px; font-weight: 700; color: var(--muted); }
+.mood-btn:active { transform: scale(.9); }
+.mood-btn.sel { background: var(--accent-soft); }
+.mood-btn.sel .e { filter: none; opacity: 1; transform: scale(1.12); }
+.mood-btn.sel .l { color: var(--accent); }
+
+/* ホームの「今日の気分は？」 */
+.mood-card { margin: 10px 12px; padding: 12px 10px 8px; border-radius: 22px; background: linear-gradient(135deg, var(--tint1), var(--card)); box-shadow: var(--shadow); text-align: center; transition: opacity .35s, transform .35s; }
+.mood-card b { font-size: 14px; }
+.mood-card .mood-btn .e { filter: none; opacity: 1; }
+.mood-card.done { opacity: 0; transform: scale(.96); }
+
+/* 投稿の天気 */
+.post-head .wx { margin-left: 6px; color: var(--muted); font-size: 13px; }
+.post-head .wx:empty { display: none; }
+
+/* 連続記録 */
+.streak { border: 0; cursor: pointer; border-radius: 999px; padding: 6px 12px; font-weight: 900; font-size: 14px; background: linear-gradient(135deg, #ffe6c7, #ffd0d8); color: #d2532f; box-shadow: 0 3px 10px rgba(255, 140, 90, .25); }
+.streak.pending { background: var(--card); color: var(--muted); box-shadow: none; border: 1.5px dashed var(--border); }
+
+/* カレンダーの気分 */
+.cal a .mood { font-size: 15px; line-height: 1.1; margin-top: 1px; }
+.stat-tile .mood-big { font-size: 22px; }

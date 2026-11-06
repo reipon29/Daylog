@@ -1,6 +1,6 @@
 // Service Worker: アプリ本体をキャッシュしてオフラインでも起動できるようにする。
 // ファイルを更新したら VERSION を上げる。
-const VERSION = 'daylog-v10';
+const VERSION = 'daylog-v11';
 const SHELL = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const SHELL = [
   './js/util.js',
   './js/location.js',
   './js/exif.js',
+  './js/weather.js',
   './icons/icon.svg',
   './icons/icon-180.png',
   './icons/icon-192.png',

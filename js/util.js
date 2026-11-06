@@ -104,9 +104,14 @@ export function loadMapLibre() {
     const css = document.createElement('link');
     css.rel = 'stylesheet';
     css.href = 'https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css';
+    // 改ざん検知（SRI）：中身が1文字でも書き換えられていたら読み込まない
+    css.integrity = 'sha512-qN/uDg9bS3IAldWq4lswyC+9ZSoShtfyNDp+FaJhdtXJqdgubHA+s4nB8BajW0m90Y0+RBGbqu2anzbxiQYdHA==';
+    css.crossOrigin = 'anonymous';
     document.head.appendChild(css);
     const s = document.createElement('script');
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js';
+    s.integrity = 'sha512-dXgoFR02YHJ9Fa29P3D/1umNaZ0EXS2N0w29Lm3b/1BK8UDLMdLWDFwuujIyJJdU27/PLuk3dmS1V9NO8ABX1A==';
+    s.crossOrigin = 'anonymous';
     s.onload = () => resolve(window.maplibregl);
     s.onerror = () => { mapLibPromise = null; reject(new Error('地図を読み込めませんでした')); };
     document.head.appendChild(s);

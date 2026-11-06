@@ -297,3 +297,20 @@ input, textarea, select { font-size: 16px !important; }
 .avatar-pick .upload.sel { border-style: solid; }
 .avatar-pick .upload img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .post-text a.tag { color: var(--accent); }
+
+/* ---------- 写真の読み込み待ち ---------- */
+.media img:not([src]) { background: var(--bg-elev); min-height: 180px; }
+
+/* ---------- 写真の撮影情報 ---------- */
+.photo-meta { margin: 2px 0 6px; }
+.meta-chip { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; border: 1.5px solid var(--border); background: var(--card); color: var(--muted); border-radius: 999px; padding: 5px 12px 5px 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.meta-chip .check { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--border); display: grid; place-items: center; font-size: 12px; }
+.meta-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.meta-chip.on .check { background: var(--accent); border-color: var(--accent); color: #fff; }
+.meta-chip small { font-weight: 500; opacity: .85; }
+
+.section-title .title-btn { margin-left: auto; font-size: 12px; padding: 5px 12px; }
+
+/* ---------- お知らせ（バックアップ） ---------- */
+.notice { margin: 10px 12px; padding: 14px 16px; border-radius: 22px; background: linear-gradient(135deg, var(--tint5), var(--card)); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
+.notice .help { font-size: 12.5px; color: var(--muted); margin-top: 2px; }

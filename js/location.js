@@ -29,10 +29,27 @@ function cacheSet(k, v) {
 }
 
 // OpenStreetMap Nominatim（無料・個人利用の範囲で）
-export async function reverseGeocode(lat, lng) {
+// 利用規約「1秒に1回まで」を守るため、問い合わせは順番待ちにする
+let queue = Promise.resolve();
+let lastRequest = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export function reverseGeocode(lat, lng) {
   const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
   const cached = cacheGet(key);
-  if (cached) return cached;
+  if (cached) return Promise.resolve(cached);
+  const job = queue.then(async () => {
+    const again = cacheGet(key); // 待っている間に同じ場所が調べ済みになったら使う
+    if (again) return again;
+    await sleep(Math.max(0, lastRequest + 1100 - Date.now()));
+    lastRequest = Date.now();
+    return fetchPlaceName(lat, lng, key);
+  });
+  queue = job.catch(() => {});
+  return job;
+}
+
+async function fetchPlaceName(lat, lng, key) {
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&accept-language=ja&lat=${lat}&lon=${lng}`;
     const res = await fetch(url, { headers: { Accept: 'application/json' } });

@@ -1,6 +1,7 @@
 import { db } from './db.js';
 import { getPosition, reverseGeocode } from './location.js';
 import { HEALTH_FIELDS, parseHealthText, formatValue } from './health.js';
+import { readExif } from './exif.js';
 import {
   $, esc, uid, dayKey, parseDay, addDays, isDayKey, weekday, fmtTime, fmtDate, fmtRelative,
   linkify, toast, resizeImage, blobToDataURL, dataURLToBlob, loadMapLibre, squareImageDataURL,
@@ -101,7 +102,27 @@ function blobURL(blob) {
   objectURLs.push(u);
   return u;
 }
+// 写真は画面に近づいたものだけ読み込む
+let photoObserver = null;
+function hydratePhotos(root = view) {
+  if (!photoObserver) {
+    photoObserver = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        const img = en.target;
+        photoObserver.unobserve(img);
+        db.getPhoto(img.dataset.photo).then((blob) => {
+          if (blob && img.isConnected) img.src = blobURL(blob);
+        });
+      }
+    }, { rootMargin: '600px 0px' });
+  }
+  root.querySelectorAll('img[data-photo]:not([src])').forEach((img) => photoObserver.observe(img));
+}
+
 function cleanup() {
+  photoObserver?.disconnect();
+  photoObserver = null;
   objectURLs.forEach((u) => URL.revokeObjectURL(u));
   objectURLs = [];
   maps.forEach((m) => m.remove());
@@ -139,7 +160,7 @@ function postHTML(p, { diary = false } = {}) {
   const photos = p.photos || [];
   const media = photos.length
     ? `<div class="media n${Math.min(photos.length, 4)}">${photos.slice(0, 4)
-      .map((b) => `<img src="${blobURL(b)}" loading="lazy" alt="" data-action="zoom">`).join('')}</div>`
+      .map((id) => `<img data-photo="${esc(id)}" alt="" data-action="zoom">`).join('')}</div>`
     : '';
   const locName = p.loc ? (p.loc.name || `${p.loc.lat.toFixed(4)}, ${p.loc.lng.toFixed(4)}`) : '';
   const loc = p.loc
@@ -168,16 +189,19 @@ function postHTML(p, { diary = false } = {}) {
   </article>`;
 }
 
-async function createPost({ text, photos, withLoc, day, kind = 'post' }) {
+// at: 日時を指定（写真の撮影時刻など）/ presetLoc: 位置を指定（写真の撮影場所など）
+async function createPost({ text, photos = [], withLoc, day, kind = 'post', at, presetLoc, takenAt }) {
   const now = new Date();
   let createdAt = now.getTime();
-  if (day && day !== dayKey(now)) {
+  if (at) {
+    createdAt = at;
+  } else if (day && day !== dayKey(now)) {
     const d = parseDay(day);
     d.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
     createdAt = d.getTime();
   }
-  let loc = null;
-  if (withLoc) {
+  let loc = presetLoc ? { ...presetLoc, source: 'photo' } : null;
+  if (!loc && withLoc) {
     try {
       loc = await getPosition();
     } catch (e) {
@@ -185,21 +209,35 @@ async function createPost({ text, photos, withLoc, day, kind = 'post' }) {
       toast(`${e.message}（位置なしで保存しました）`);
     }
   }
-  const post = { id: uid(), createdAt, day: dayKey(new Date(createdAt)), text, photos, loc, kind, fav: false };
+  const photoIds = [];
+  for (const b of photos) photoIds.push(await db.addPhoto(b));
+  const post = { id: uid(), createdAt, day: dayKey(new Date(createdAt)), text, photos: photoIds, loc, kind, fav: false };
+  if (takenAt) post.takenAt = takenAt;
   await db.putPost(post);
 
   // 地名はあとから非同期で付与
-  if (loc && settings.geocode) {
-    reverseGeocode(loc.lat, loc.lng).then(async (name) => {
-      if (!name) return;
-      const p = await db.getPost(post.id);
-      if (!p?.loc) return;
-      p.loc = { ...p.loc, name };
-      await db.putPost(p);
-      document.querySelectorAll(`[data-loc-for="${post.id}"] span`).forEach((el) => { el.textContent = name; });
-    });
-  }
+  if (loc && settings.geocode) nameLocation(post.id, loc);
   return post;
+}
+
+async function nameLocation(id, loc) {
+  const name = await reverseGeocode(loc.lat, loc.lng);
+  const p = await db.getPost(id);
+  if (!p?.loc) return;
+  // 取れなかったときは時刻を残し、あとで再挑戦する
+  p.loc = name ? { ...p.loc, name, geoTriedAt: undefined } : { ...p.loc, geoTriedAt: Date.now() };
+  await db.putPost(p);
+  if (name) document.querySelectorAll(`[data-loc-for="${id}"] span`).forEach((el) => { el.textContent = name; });
+}
+
+// 電波が悪くて地名が付かなかったポストに、あとから地名を付ける
+async function retryMissingNames() {
+  if (!settings.geocode || !navigator.onLine) return;
+  const dayAgo = Date.now() - 86400000;
+  const todo = (await db.allPosts())
+    .filter((p) => p.loc && !p.loc.name && !(p.loc.geoTriedAt > dayAgo))
+    .slice(0, 20);
+  for (const p of todo) await nameLocation(p.id, p.loc);
 }
 
 /* ---------- 投稿フォーム ---------- */
@@ -213,6 +251,7 @@ function composerHTML({ day } = {}) {
       ${past ? `<div class="when">${fmtDate(parseDay(day).getTime())} の日記として記録</div>` : ''}
       <textarea name="text" rows="2" placeholder="${day ? 'この日のできごとは？' : 'いまどうしてる？'}"></textarea>
       <div class="thumbs"></div>
+      <div class="photo-meta" hidden></div>
       <div class="composer-tools">
         <label class="icon-btn" title="写真を追加">${I.photo}<input type="file" accept="image/*" multiple hidden></label>
         <button type="button" class="icon-btn loc-toggle" title="位置情報をつける" aria-label="位置情報をつける">${I.pin}</button>
@@ -233,8 +272,12 @@ function bindComposer(form, { day, onPosted }) {
   const locBtn = form.querySelector('.loc-toggle');
   const checkinBtn = form.querySelector('.checkin');
   const fileInput = form.querySelector('input[type=file]');
+  const metaEl = form.querySelector('.photo-meta');
   const past = day && day !== dayKey();
-  let photos = [];
+  let photos = []; // { blob, meta: { time?, loc? } | null }
+  let usePhotoMeta = true;
+  // 写真の撮影場所・日時（位置つきの写真を優先）
+  const photoMeta = () => photos.find((p) => p.meta?.loc)?.meta || photos.find((p) => p.meta?.time)?.meta || null;
   let locOn = settings.autoLocation && !past;
   let busy = false;
 
@@ -247,9 +290,18 @@ function bindComposer(form, { day, onPosted }) {
     ta.style.height = ta.scrollHeight + 'px';
   };
   const renderThumbs = () => {
-    thumbs.innerHTML = photos.map((b, i) =>
-      `<div class="thumb"><img src="${blobURL(b)}" alt=""><button type="button" data-i="${i}" aria-label="削除">✕</button></div>`).join('');
+    thumbs.innerHTML = photos.map((p, i) =>
+      `<div class="thumb"><img src="${blobURL(p.blob)}" alt=""><button type="button" data-i="${i}" aria-label="削除">✕</button></div>`).join('');
+    const m = photoMeta();
+    metaEl.hidden = !m;
+    if (m) {
+      const what = [m.loc && '場所', m.time && '日時'].filter(Boolean).join('と');
+      metaEl.innerHTML = `<button type="button" class="meta-chip ${usePhotoMeta ? 'on' : ''}">
+        <span class="check">${usePhotoMeta ? '✓' : ''}</span>📷 写真を撮った${what}で記録
+        ${m.time ? `<small>${fmtDate(m.time)} ${fmtTime(m.time)}</small>` : ''}</button>`;
+    }
   };
+  metaEl.addEventListener('click', () => { usePhotoMeta = !usePhotoMeta; renderThumbs(); });
 
   ta.addEventListener('input', refresh);
   ta.addEventListener('keydown', (e) => {
@@ -265,7 +317,10 @@ function bindComposer(form, { day, onPosted }) {
   fileInput.addEventListener('change', async () => {
     const files = [...fileInput.files].slice(0, 4 - photos.length);
     fileInput.value = '';
-    for (const f of files) photos.push(await resizeImage(f));
+    for (const f of files) {
+      const meta = await readExif(f); // 縮小すると情報が消えるので先に読む
+      photos.push({ blob: await resizeImage(f), meta });
+    }
     if (photos.length >= 4) toast('写真は1ポスト4枚までです');
     renderThumbs(); refresh();
   });
@@ -274,11 +329,17 @@ function bindComposer(form, { day, onPosted }) {
     if (busy) return;
     busy = true;
     submit.disabled = true;
-    if (kind === 'checkin' || locOn) toast('現在地を取得中…');
+    const m = kind === 'post' && usePhotoMeta ? photoMeta() : null;
+    const withLoc = kind === 'checkin' || (locOn && !m);
+    if (withLoc) toast('現在地を取得中…');
     try {
-      await createPost({ text: ta.value.trim(), photos, withLoc: kind === 'checkin' || locOn, day, kind });
+      await createPost({
+        text: ta.value.trim(), photos: photos.map((p) => p.blob), withLoc, day, kind,
+        at: m?.time, presetLoc: m?.loc, takenAt: m ? photoKey(m) : undefined,
+      });
       ta.value = '';
       photos = [];
+      usePhotoMeta = true;
       renderThumbs();
       toast(kind === 'checkin' ? 'チェックインしました' : 'ポストしました');
       onPosted?.();
@@ -302,6 +363,7 @@ view.addEventListener('click', async (e) => {
   const id = article?.dataset.id;
   switch (btn.dataset.action) {
     case 'zoom':
+      if (!btn.src) return;
       openDialog(`<img src="${btn.src}" alt="">`, 'lightbox');
       break;
     case 'fav': {
@@ -360,7 +422,8 @@ async function editPost(id) {
 async function sharePost(id) {
   const p = await db.getPost(id);
   const text = [p.text, p.loc?.name && `📍${p.loc.name}`].filter(Boolean).join('\n');
-  const files = (p.photos || []).map((b, i) => new File([b], `photo${i + 1}.jpg`, { type: b.type || 'image/jpeg' }));
+  const blobs = (await Promise.all((p.photos || []).map((id) => db.getPhoto(id)))).filter(Boolean);
+  const files = blobs.map((b, i) => new File([b], `photo${i + 1}.jpg`, { type: b.type || 'image/jpeg' }));
   const data = { text };
   if (files.length && navigator.canShare?.({ files })) data.files = files;
   try {
@@ -389,10 +452,20 @@ async function renderHome(query, alive) {
   if (!alive()) return;
 
   view.innerHTML = `
+    ${query ? '' : backupNoticeHTML(posts)}
     ${query ? '' : composerHTML()}
     <div class="search"><input type="search" placeholder="キーワード・#タグ・場所で検索" value="${esc(query)}"></div>
     <div id="feed"></div>`;
   if (!query) bindComposer(view.querySelector('.composer'), { onPosted: router });
+  view.querySelectorAll('[data-bk]').forEach((b) => b.addEventListener('click', async () => {
+    if (b.dataset.bk === 'now') {
+      await exportBackup();
+    } else {
+      settings.backupSnoozeUntil = Date.now() + 3 * 86400000;
+      saveSettings();
+      view.querySelector('.notice')?.remove();
+    }
+  }));
 
   const feed = $('#feed');
   const draw = (q) => {
@@ -406,6 +479,7 @@ async function renderHome(query, alive) {
       shown += chunk.length;
       feed.querySelector('.more')?.remove();
       feed.insertAdjacentHTML('beforeend', chunk.map((p) => postHTML(p)).join(''));
+      hydratePhotos(feed);
       if (shown < list.length) {
         feed.insertAdjacentHTML('beforeend', '<div class="empty more"><button class="btn secondary">もっと見る</button></div>');
         feed.querySelector('.more button').onclick = more;
@@ -451,12 +525,13 @@ async function renderDay(day, alive) {
     <h2 class="section-title">💗 からだ</h2>
     ${healthHTML(health)}
 
-    <h2 class="section-title">🐾 足あと</h2>
+    <h2 class="section-title">🐾 足あと
+      <label class="btn small secondary title-btn">📷 写真から追加<input type="file" id="photo-trail" accept="image/*" multiple hidden></label></h2>
     ${located.length ? `
       <div id="daymap" class="map"></div>
       <ol class="places">${located.map((p, i) => `
         <li><span class="num">${i + 1}</span><span class="t">${fmtTime(p.createdAt)}</span><span class="n"><span data-loc-for="${p.id}"><span>${esc(p.loc.name || '（地名を取得できませんでした）')}</span></span></span></li>`).join('')}
-      </ol>` : '<p class="section-sub">この日の足あとはまだありません。おでかけ先でチェックインすると、ここに地図ができます 🐾</p>'}
+      </ol>` : '<p class="section-sub">この日の足あとはまだありません。おでかけ先でチェックインするか、「写真から追加」で撮った写真を選ぶと、ここに地図ができます 🐾</p>'}
 
     <h2 class="section-title">📝 できごと</h2>
     ${composerHTML({ day })}
@@ -472,7 +547,50 @@ async function renderDay(day, alive) {
 
   bindComposer(view.querySelector('.composer'), { day, onPosted: router });
   bindHealthButtons(view, day);
+  hydratePhotos(view);
+  $('#photo-trail').addEventListener('change', async (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    if (files.length) await importPhotoTrail(files, day);
+  });
   if (located.length) drawDayMap($('#daymap'), located);
+}
+
+// 同じ写真を二重に追加しないための目印（撮影日時＋場所）
+const photoKey = (meta) => `${meta.time || ''}|${meta.loc?.lat || ''},${meta.loc?.lng || ''}`;
+
+// 写真の撮影場所・日時から、まとめてポストを作る
+async function importPhotoTrail(files, currentDay) {
+  toast(`${files.length}枚の写真を読み込み中…`, 60000);
+  const known = new Set((await db.allPosts()).map((p) => p.takenAt).filter(Boolean));
+  const items = [];
+  let noInfo = 0;
+  let dup = 0;
+  for (const f of files) {
+    const meta = await readExif(f);
+    if (!meta) { noInfo++; continue; }
+    const key = photoKey(meta);
+    if (known.has(key)) { dup++; continue; }
+    known.add(key);
+    items.push({ f, meta, key });
+  }
+  items.sort((a, b) => (a.meta.time || 0) - (b.meta.time || 0));
+  const days = new Set();
+  for (const { f, meta, key } of items) {
+    const post = await createPost({
+      text: '', photos: [await resizeImage(f)], withLoc: false, day: currentDay,
+      at: meta.time, presetLoc: meta.loc, takenAt: key,
+    });
+    days.add(post.day);
+  }
+  const notes = [noInfo && `撮影情報なし${noInfo}枚`, dup && `追加済み${dup}枚`].filter(Boolean).join('・');
+  toast(items.length
+    ? `${items.length}枚を足あとに追加しました${notes ? `（${notes}はスキップ）` : ''}`
+    : `追加できる写真がありませんでした${notes ? `（${notes}）` : ''}`, 4000);
+  // 写真が1日分ならその日を開く
+  const only = days.size === 1 ? [...days][0] : null;
+  if (only && only !== currentDay) location.hash = `#/day/${only}`;
+  else router();
 }
 
 function healthHTML(h) {
@@ -733,7 +851,8 @@ async function renderSettings(alive) {
 
     <h2 class="section-title">💾 バックアップ</h2>
     <div class="group"><div class="field">
-      <div class="help">データはこの端末の中だけに保存されています。機種変更やもしもに備えて、ときどき書き出してください。${storage ? `<br>${storage}` : ''}</div>
+      <div class="help">データはこの端末の中だけに保存されています。機種変更やもしもに備えて、ときどき書き出してください。
+        <br>前回のバックアップ：${settings.lastBackupAt ? fmtDate(settings.lastBackupAt) : 'まだありません'}${storage ? `<br>${storage}` : ''}</div>
       <div class="btn-row">
         <button class="btn small" id="b-export">書き出す</button>
         <label class="btn small secondary">読み込む<input type="file" id="b-import" accept=".json,application/json" hidden></label>
@@ -742,7 +861,7 @@ async function renderSettings(alive) {
 
     <h2 class="section-title">🧹 その他</h2>
     <div class="group"><div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div></div>
-    <p class="section-sub" style="padding-top:12px">Daylog v1.0</p>
+    <p class="section-sub" style="padding-top:12px">Daylog v1.1</p>
   </div>`;
 
   const bindText = (id, key) => $(id).addEventListener('change', (e) => {
@@ -805,14 +924,37 @@ async function renderSettings(alive) {
   });
 }
 
+function backupNoticeHTML(posts) {
+  if (!posts.length || settings.backupSnoozeUntil > Date.now()) return '';
+  const base = settings.lastBackupAt || posts.reduce((m, p) => Math.min(m, p.createdAt), Infinity);
+  const days = Math.floor((Date.now() - base) / 86400000);
+  if (days < 14) return '';
+  return `<div class="notice">
+    <div><b>💾 ${settings.lastBackupAt ? `前回のバックアップから${days}日たちました` : 'まだバックアップがありません'}</b>
+    <div class="help">iPhoneが壊れたり機種変更したりしても日記が消えないように、書き出しておきましょう。</div></div>
+    <div class="btn-row"><button class="btn small" data-bk="now">書き出す</button><button class="btn small secondary" data-bk="later">あとで</button></div>
+  </div>`;
+}
+
+function markBackedUp() {
+  settings.lastBackupAt = Date.now();
+  settings.backupSnoozeUntil = 0;
+  saveSettings();
+  document.querySelector('.notice')?.remove();
+}
+
 async function exportBackup() {
   toast('書き出し中…');
   const [posts, health] = await Promise.all([db.allPosts(), db.allHealth()]);
+  const photosOf = async (p) => {
+    const blobs = await Promise.all((p.photos || []).map((id) => db.getPhoto(id)));
+    return Promise.all(blobs.filter(Boolean).map(blobToDataURL));
+  };
   const out = {
     app: 'daylog',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
-    posts: await Promise.all(posts.map(async (p) => ({ ...p, photos: await Promise.all((p.photos || []).map(blobToDataURL)) }))),
+    posts: await Promise.all(posts.map(async (p) => ({ ...p, photos: await photosOf(p) }))),
     health,
     settings,
   };
@@ -820,7 +962,7 @@ async function exportBackup() {
   const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
   const file = new File([blob], name, { type: 'application/json' });
   if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); return; }
+    try { await navigator.share({ files: [file], title: name }); markBackedUp(); toast('書き出しました'); return; }
     catch (e) { if (e.name === 'AbortError') return; }
   }
   const a = document.createElement('a');
@@ -828,6 +970,7 @@ async function exportBackup() {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  markBackedUp();
 }
 
 async function importBackup(file) {
@@ -835,7 +978,12 @@ async function importBackup(file) {
     const data = JSON.parse(await file.text());
     if (data.app !== 'daylog') throw new Error('Daylog のバックアップではありません');
     for (const p of data.posts || []) {
-      await db.putPost({ ...p, photos: await Promise.all((p.photos || []).map(dataURLToBlob)) });
+      // 同じポストを読み込み直すときは、古い写真を消してから入れ直す
+      const old = await db.getPost(p.id);
+      for (const id of old?.photos || []) await db.deletePhoto(id);
+      const ids = [];
+      for (const url of p.photos || []) ids.push(await db.addPhoto(await dataURLToBlob(url)));
+      await db.putPost({ ...p, photos: ids });
     }
     for (const h of data.health || []) await db.putHealth(h);
     if (data.settings) { settings = { ...DEFAULTS, ...data.settings }; saveSettings(); }
@@ -855,7 +1003,9 @@ for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
 }
 
 window.addEventListener('hashchange', () => { router(); window.scrollTo(0, 0); });
+window.addEventListener('online', retryMissingNames);
 router();
+setTimeout(retryMissingNames, 3000);
 
 navigator.storage?.persist?.().catch(() => {});
 if ('serviceWorker' in navigator) {

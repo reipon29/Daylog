@@ -826,6 +826,13 @@ async function importBackup(file) {
 }
 
 /* ================= 起動 ================= */
+// iOS Safari のピンチによるページ拡大を止める（地図の中は除く）
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(type, (e) => {
+    if (!e.target.closest?.('.maplibregl-map')) e.preventDefault();
+  }, { passive: false });
+}
+
 window.addEventListener('hashchange', () => { router(); window.scrollTo(0, 0); });
 router();
 

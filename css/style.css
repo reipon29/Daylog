@@ -280,3 +280,10 @@ dialog.lightbox img { max-width: 100vw; max-height: 100dvh; object-fit: contain;
 .maplibregl-map { font: inherit; }
 .maplibregl-popup-content { border-radius: 16px; padding: 10px 14px; font-size: 13px; line-height: 1.5; color: #4b3a47; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
 .maplibregl-ctrl-attrib { font-size: 10px; }
+
+/* ---------- ズーム防止 ---------- */
+/* ダブルタップ拡大を無効化（地図は自前で拡大縮小を処理する） */
+html, body { touch-action: manipulation; }
+/* iOS は 16px 未満の入力欄にフォーカスすると自動で拡大するため */
+input, textarea, select { font-size: 16px !important; }
+.composer textarea { font-size: 18px !important; }

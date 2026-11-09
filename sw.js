@@ -2,7 +2,7 @@
 // ・アプリのファイルは「ネット優先」：つながっていれば常に最新、圏外のときだけ保存した版
 // ・外部ライブラリ（中身が変わらない）は保存した版を優先
 // ファイルを更新したら VERSION を上げる。
-const VERSION = 'daylog-v14';
+const VERSION = 'daylog-v15';
 const SHELL = [
   './',
   './index.html',

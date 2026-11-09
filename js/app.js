@@ -518,10 +518,11 @@ view.addEventListener('click', async (e) => {
   const article = btn.closest('.post');
   const id = article?.dataset.id;
   switch (btn.dataset.action) {
-    case 'zoom':
-      if (!btn.src) return;
-      openDialog(`<img src="${btn.src}" alt="">`, 'lightbox');
+    case 'zoom': {
+      const imgs = [...btn.closest('.media').querySelectorAll('img[data-photo]')];
+      openViewer(imgs.map((i) => i.dataset.photo), imgs.indexOf(btn));
       break;
+    }
     case 'fav': {
       const p = await db.getPost(id);
       p.fav = !p.fav;
@@ -652,13 +653,159 @@ async function sharePost(id) {
   } catch { /* キャンセル */ }
 }
 
+/* ================= 写真ビューア ================= */
+// ピンチ・ダブルタップで拡大、拡大中は指でずらす、左右スワイプで切り替え、下スワイプで閉じる
+async function openViewer(ids, start = 0) {
+  if (!ids.length) return;
+  const urls = [];
+  const el = document.createElement('div');
+  el.id = 'viewer';
+  el.innerHTML = `
+    <div class="v-stage"><img alt=""></div>
+    <button class="v-close" aria-label="閉じる">✕</button>
+    ${ids.length > 1 ? '<div class="v-count"></div><button class="v-prev" aria-label="前の写真">‹</button><button class="v-next" aria-label="次の写真">›</button>' : ''}`;
+  document.body.appendChild(el);
+  document.body.classList.add('viewer-open');
+  const img = el.querySelector('img');
+  const count = el.querySelector('.v-count');
+  let idx = Math.max(0, start);
+  let s = 1; let tx = 0; let ty = 0; // 拡大率と移動量
+
+  const apply = (animate = false) => {
+    img.style.transition = animate ? 'transform .25s ease' : 'none';
+    img.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+  };
+  const reset = (animate = true) => { s = 1; tx = 0; ty = 0; apply(animate); el.style.setProperty('--fade', 1); };
+  const show = async (i) => {
+    idx = (i + ids.length) % ids.length;
+    if (count) count.textContent = `${idx + 1} / ${ids.length}`;
+    reset(false);
+    const blob = await db.getPhoto(ids[idx]);
+    if (!blob) return;
+    const u = URL.createObjectURL(blob);
+    urls.push(u);
+    img.src = u;
+  };
+  const close = () => {
+    el.classList.add('closing');
+    setTimeout(() => {
+      el.remove();
+      document.body.classList.remove('viewer-open');
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    }, 200);
+    document.removeEventListener('keydown', onKey);
+  };
+  // 拡大したまま画像が画面の外に出すぎないようにする
+  const clamp = () => {
+    const w = img.offsetWidth; const h = img.offsetHeight; // 拡大前の表示サイズ（transform の影響を受けない）
+    const maxX = Math.max(0, (w * s - innerWidth) / 2);
+    const maxY = Math.max(0, (h * s - innerHeight) / 2);
+    tx = Math.min(maxX, Math.max(-maxX, tx));
+    ty = Math.min(maxY, Math.max(-maxY, ty));
+  };
+  // 画面上の点 (x, y) を中心に拡大率を変える
+  const zoomAt = (x, y, ns) => {
+    const cx = innerWidth / 2; const cy = innerHeight / 2;
+    const qx = (x - cx - tx) / s; const qy = (y - cy - ty) / s;
+    s = ns;
+    tx = x - cx - s * qx; ty = y - cy - s * qy;
+  };
+
+  // ---- タッチ操作
+  let mode = null; let x0 = 0; let y0 = 0; let tx0 = 0; let ty0 = 0;
+  let d0 = 0; let s0 = 1; let mx0 = 0; let my0 = 0; let lastTap = 0; let moved = false;
+  const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const mid = (t) => [(t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2];
+  const stage = el.querySelector('.v-stage');
+  stage.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const t = e.touches;
+    if (t.length >= 2) {
+      mode = 'pinch'; d0 = dist(t); s0 = s; [mx0, my0] = mid(t); tx0 = tx; ty0 = ty;
+    } else if (t.length === 1) {
+      mode = s > 1.01 ? 'pan' : 'swipe';
+      x0 = t[0].clientX; y0 = t[0].clientY; tx0 = tx; ty0 = ty; moved = false;
+    }
+  }, { passive: false });
+  stage.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const t = e.touches;
+    if (mode === 'pinch' && t.length >= 2) {
+      const ns = Math.min(5, Math.max(0.8, s0 * (dist(t) / d0)));
+      const [mx, my] = mid(t);
+      // つまんだ点が指の真ん中についてくるように
+      const cx = innerWidth / 2; const cy = innerHeight / 2;
+      const qx = (mx0 - cx - tx0) / s0; const qy = (my0 - cy - ty0) / s0;
+      s = ns; tx = mx - cx - s * qx; ty = my - cy - s * qy;
+      apply();
+    } else if (t.length === 1) {
+      const dx = t[0].clientX - x0; const dy = t[0].clientY - y0;
+      if (Math.abs(dx) + Math.abs(dy) > 8) moved = true;
+      if (mode === 'pan') { tx = tx0 + dx; ty = ty0 + dy; apply(); }
+      else if (mode === 'swipe') {
+        // 下へ引っぱると閉じる、横は写真の切り替え
+        if (Math.abs(dy) > Math.abs(dx)) { ty = Math.max(0, dy); tx = 0; el.style.setProperty('--fade', String(Math.max(0.3, 1 - ty / 400))); }
+        else { tx = dx; ty = 0; }
+        apply();
+      }
+    }
+  }, { passive: false });
+  stage.addEventListener('touchend', (e) => {
+    if (e.touches.length) { // ピンチから指が1本離れたら、そのままずらす操作へ
+      const t = e.touches[0]; mode = s > 1.01 ? 'pan' : 'swipe'; x0 = t.clientX; y0 = t.clientY; tx0 = tx; ty0 = ty;
+      return;
+    }
+    const was = mode; mode = null;
+    if (was === 'pinch') {
+      if (s < 1.05) reset(); else { clamp(); apply(true); }
+      return;
+    }
+    if (was === 'swipe') {
+      if (ty > 110) { close(); return; }
+      if (ids.length > 1 && Math.abs(tx) > 70) { show(idx + (tx < 0 ? 1 : -1)); return; }
+      reset();
+    }
+    if (was === 'pan') { clamp(); apply(true); }
+    // ダブルタップ
+    if (!moved) {
+      const now = Date.now();
+      const touch = e.changedTouches[0];
+      if (now - lastTap < 300) {
+        if (s > 1.01) reset(); else { zoomAt(touch.clientX, touch.clientY, 2.5); clamp(); apply(true); }
+        lastTap = 0;
+      } else lastTap = now;
+    }
+  });
+
+  // ---- パソコン用（クリック・ホイール・キー）
+  stage.addEventListener('dblclick', (e) => {
+    if (s > 1.01) reset(); else { zoomAt(e.clientX, e.clientY, 2.5); clamp(); apply(true); }
+  });
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomAt(e.clientX, e.clientY, Math.min(5, Math.max(1, s * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
+    if (s <= 1.01) reset(false); else { clamp(); apply(); }
+  }, { passive: false });
+  stage.addEventListener('click', (e) => { if (e.target === stage && s <= 1.01 && !('ontouchstart' in window)) close(); });
+  el.querySelector('.v-close').addEventListener('click', close);
+  el.querySelector('.v-prev')?.addEventListener('click', () => show(idx - 1));
+  el.querySelector('.v-next')?.addEventListener('click', () => show(idx + 1));
+  const onKey = (e) => {
+    if (e.key === 'Escape') close();
+    else if (e.key === 'ArrowRight' && ids.length > 1) show(idx + 1);
+    else if (e.key === 'ArrowLeft' && ids.length > 1) show(idx - 1);
+  };
+  document.addEventListener('keydown', onKey);
+  await show(idx);
+}
+
 /* ================= ダイアログ ================= */
 function openDialog(html, cls = '') {
   const d = $('#dialog');
   d.className = cls;
   d.innerHTML = html;
   d.returnValue = '';
-  d.onclick = (e) => { if (e.target === d || cls === 'lightbox') d.close(); };
+  d.onclick = (e) => { if (e.target === d) d.close(); };
   d.showModal();
   return new Promise((resolve) => d.addEventListener('close', () => resolve(d.returnValue), { once: true }));
 }
@@ -1208,7 +1355,7 @@ async function importBackup(file) {
 // iOS Safari のピンチによるページ拡大を止める（地図の中は除く）
 for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
   document.addEventListener(type, (e) => {
-    if (!e.target.closest?.('.maplibregl-map')) e.preventDefault();
+    if (!e.target.closest?.('.maplibregl-map, #viewer')) e.preventDefault();
   }, { passive: false });
 }
 

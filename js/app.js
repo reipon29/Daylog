@@ -27,7 +27,8 @@ const avatarHTML = () => (settings.avatarImage ? `<img src="${settings.avatarIma
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
 // 地図を作り、ピンを置いて、全ピンが入るように表示する
-async function createMap(el, located, { makePin, popupHTML, maxZoom = 15, onLoad }) {
+// twoFinger: 地図を2本指で動かす（1本指はページのスクロールに使う）
+async function createMap(el, located, { makePin, popupHTML, maxZoom = 15, onLoad, twoFinger = false }) {
   const ml = await loadMapLibre();
   if (!el.isConnected) return;
   const coords = located.map((p) => [p.loc.lng, p.loc.lat]);
@@ -37,7 +38,12 @@ async function createMap(el, located, { makePin, popupHTML, maxZoom = 15, onLoad
     center: coords[0],
     zoom: maxZoom,
     attributionControl: { compact: true },
-    cooperativeGestures: false,
+    cooperativeGestures: twoFinger,
+    locale: {
+      'CooperativeGesturesHandler.MobileHelpText': '2本の指で地図を動かせます',
+      'CooperativeGesturesHandler.MacHelpText': '⌘ を押しながらスクロールで拡大・縮小',
+      'CooperativeGesturesHandler.WindowsHelpText': 'Ctrl を押しながらスクロールで拡大・縮小',
+    },
   });
   maps.push(map);
   located.forEach((p, i) => {
@@ -1000,6 +1006,7 @@ async function drawDayMap(el, located) {
   try {
     await createMap(el, located, {
       maxZoom: 16,
+      twoFinger: true,
       makePin: (p, i) => pinEl('map-pin', `<span><b>${i + 1}</b></span>`),
       popupHTML: (p) => `<b>${fmtTime(p.createdAt)}</b> ${esc(p.loc.name || '')}${p.text ? `<br>${esc(p.text.slice(0, 80))}` : ''}`,
       // 移動した順に点線（足あと）でつなぐ

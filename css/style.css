@@ -419,3 +419,6 @@ body.viewer-open { overflow: hidden; }
 #viewer .v-next { right: 12px; }
 @media (hover: none) { #viewer .v-prev, #viewer .v-next { display: none; } }
 #viewer .v-count { position: absolute; top: calc(var(--safe-t) + 20px); left: 50%; transform: translateX(-50%); color: #fff; font-size: 14px; font-weight: 600; }
+
+/* 「2本の指で地図を動かせます」の案内（地図ライブラリの表示を iOS 風に） */
+.maplibregl-cooperative-gesture-screen { background: rgba(0, 0, 0, .45); color: #fff; font-size: 17px; font-weight: 600; padding: 0 24px; border-radius: var(--radius); }

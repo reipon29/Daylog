@@ -353,3 +353,36 @@ input, textarea, select { font-size: 16px !important; }
 /* カレンダーの気分 */
 .cal a .mood { font-size: 15px; line-height: 1.1; margin-top: 1px; }
 .stat-tile .mood-big { font-size: 22px; }
+
+/* ---------- スレッド（自分への返信） ---------- */
+.thread { margin: 10px 12px; border-radius: 24px; background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
+.thread > .post { margin: 0; border-radius: 0; box-shadow: none; position: relative; }
+.thread > .post:not(:last-child)::after { content: ""; position: absolute; left: 35px; top: 62px; bottom: -14px; width: 2px; border-radius: 2px; background: var(--accent-soft); }
+.thread > .post.checkin { background: var(--card); }
+.post-actions .icon-btn .n { font-size: 12px; min-width: 6px; }
+.reply-ctx { display: block; font-size: 12px; font-weight: 700; color: var(--muted); margin: 0 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- 引用 ---------- */
+.quote, .compose-target { display: block; border: 1.5px solid var(--border); border-radius: 16px; padding: 8px 12px; margin: 8px 0 4px; color: var(--text); background: var(--card); }
+.quote.gone { color: var(--muted); font-size: 13px; }
+.q-head { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.q-head b { color: var(--text); }
+.q-text { font-size: 14px; margin-top: 2px; white-space: pre-wrap; word-break: break-word; }
+.q-loc { display: block; font-size: 12px; color: var(--mint); font-weight: 700; margin-top: 2px; }
+.avatar.mini { width: 20px; height: 20px; font-size: 11px; }
+
+/* 返信・引用の入力画面 */
+.compose-dlg { padding: 4px 12px 0 !important; }
+.compose-dlg .composer { margin: 8px 0; box-shadow: none; border: 1.5px solid var(--border); }
+.compose-dlg .compose-target { margin: 4px 0; }
+
+/* ---------- 「⋯」メニュー（下から出るシート） ---------- */
+dialog.sheet[open] { margin: auto auto calc(var(--safe-b) + 12px); width: min(94vw, 440px); border-radius: 24px; padding: 8px; }
+.menu { display: flex; flex-direction: column; }
+.menu button { display: flex; align-items: center; gap: 12px; border: 0; background: transparent; padding: 14px 14px; border-radius: 14px; font-size: 15px; font-weight: 700; cursor: pointer; text-align: left; color: var(--text); }
+.menu button:active { background: var(--accent-soft); }
+.menu button svg { color: var(--muted); }
+.menu .danger, .menu .danger svg { color: var(--danger); }
+.menu .cancel { justify-content: center; color: var(--muted); margin-top: 4px; border-top: 1.5px dashed var(--border); border-radius: 0 0 14px 14px; }
+.x-logo { width: 22px; text-align: center; font-size: 18px; }
+.x-preview { background: var(--bg-elev); border-radius: 14px; padding: 10px 12px; white-space: pre-wrap; word-break: break-word; max-height: 40dvh; overflow-y: auto; }

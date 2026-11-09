@@ -84,6 +84,9 @@ const I = {
   edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg>',
   share: '<svg viewBox="0 0 24 24"><path d="M12 3v12M7 8l5-5 5 5M5 14v6h14v-6"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+  reply: '<svg viewBox="0 0 24 24"><path d="M4 12a8 7 0 0 1 8-7h0a8 7 0 0 1 0 14H9l-5 3 1.5-4.5A6.8 6.8 0 0 1 4 12z"/></svg>',
+  quote: '<svg viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3M18 7v5M6 17v-5"/></svg>',
+  more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>',
   left: '<svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg>',
   right: '<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>',
 };
@@ -200,7 +203,40 @@ async function router() {
 }
 
 /* ================= ポスト ================= */
-function postHTML(p, { diary = false } = {}) {
+// 引用・返信を表示するための索引（各画面で全ポストを読み込んだときに更新）
+let postIndex = new Map();
+let replyIndex = new Map(); // 元ポストID → 返信の配列（古い順）
+function indexPosts(all) {
+  postIndex = new Map(all.map((p) => [p.id, p]));
+  replyIndex = new Map();
+  for (const p of all) {
+    if (!p.replyTo || !postIndex.has(p.replyTo)) continue;
+    if (!replyIndex.has(p.replyTo)) replyIndex.set(p.replyTo, []);
+    replyIndex.get(p.replyTo).push(p);
+  }
+  for (const list of replyIndex.values()) list.sort((a, b) => a.createdAt - b.createdAt);
+}
+const isRoot = (p) => !p.replyTo || !postIndex.has(p.replyTo);
+const snippet = (t, n = 80) => { const s1 = (t || '').replace(/\s+/g, ' ').trim(); return s1.length > n ? `${s1.slice(0, n)}…` : s1; };
+
+function quoteHTML(p) {
+  if (!p.quoteOf) return '';
+  const q = postIndex.get(p.quoteOf);
+  if (!q) return '<div class="quote gone">この投稿は削除されました</div>';
+  const body = q.text ? esc(snippet(q.text, 140)) : (q.photos?.length ? '📷 写真' : (q.kind === 'checkin' ? '📍 チェックイン' : ''));
+  return `<a class="quote" href="#/day/${q.day}">
+    <div class="q-head"><span class="avatar mini">${avatarHTML()}</span><b>${esc(settings.name)}</b><span>· ${fmtDate(q.createdAt)}</span></div>
+    <div class="q-text">${body}${q.loc?.name ? `<span class="q-loc">📍${esc(q.loc.name)}</span>` : ''}</div></a>`;
+}
+
+// スレッド：元のポスト＋自分への返信をつなげて表示
+function threadHTML(root, opts = {}) {
+  const replies = replyIndex.get(root.id) || [];
+  if (!replies.length) return postHTML(root, opts);
+  return `<div class="thread">${postHTML(root, opts)}${replies.map((r) => postHTML(r, { ...opts, inThread: true })).join('')}</div>`;
+}
+
+function postHTML(p, { diary = false, pageDay = null, inThread = false, context = false } = {}) {
   const photos = p.photos || [];
   const media = photos.length
     ? `<div class="media n${Math.min(photos.length, 4)}">${photos.slice(0, 4)
@@ -213,28 +249,35 @@ function postHTML(p, { diary = false } = {}) {
   const text = p.text
     ? `<div class="post-text">${linkify(p.text)}</div>`
     : (p.kind === 'checkin' ? '<div class="post-text">チェックインしました</div>' : '');
-  const time = diary
+  const time = diary && (!pageDay || p.day === pageDay)
     ? `<span class="time">${fmtTime(p.createdAt)}</span>`
-    : `<a class="time" href="#/day/${p.day}">${fmtRelative(p.createdAt)}</a>`;
+    : diary
+      ? `<a class="time" href="#/day/${p.day}">${fmtDate(p.createdAt)} ${fmtTime(p.createdAt)}</a>`
+      : `<a class="time" href="#/day/${p.day}">${fmtRelative(p.createdAt)}</a>`;
+  // スレッドの外で返信を表示するときは、何への返信かを出す
+  const parent = p.replyTo ? postIndex.get(p.replyTo) : null;
+  const ctx = context && parent
+    ? `<a class="reply-ctx" href="#/day/${parent.day}">↪ ${fmtDate(parent.createdAt)}「${esc(snippet(parent.text, 24)) || '投稿'}」への返信</a>` : '';
+  const nReplies = (replyIndex.get(p.id) || []).length;
   return `
-  <article class="post ${p.kind === 'checkin' ? 'checkin' : ''}" data-id="${p.id}">
+  <article class="post ${p.kind === 'checkin' ? 'checkin' : ''} ${inThread ? 'in-thread' : ''}" data-id="${p.id}">
     <div class="avatar">${p.kind === 'checkin' ? I.flag : avatarHTML()}</div>
     <div class="post-main">
       <div class="post-head"><span class="name">${esc(settings.name)}</span><span>@${esc(settings.handle)}</span><span>·</span>${time}<span class="wx" data-wx-for="${p.id}">${wxText(p.weather)}</span></div>
-      ${text}${media}${loc}
+      ${ctx}${text}${media}${quoteHTML(p)}${loc}
       <div class="post-actions">
-        <a class="icon-btn" href="#/day/${p.day}" title="この日の日記帳">${I.book}</a>
+        <button class="icon-btn" data-action="reply" title="続きを書く（返信）">${I.reply}<span class="n">${!inThread && nReplies ? nReplies : ''}</span></button>
+        <button class="icon-btn" data-action="quote" title="引用して書く">${I.quote}</button>
         <button class="icon-btn ${p.fav ? 'liked' : ''}" data-action="fav" title="お気に入り">${I.heart}</button>
-        <button class="icon-btn" data-action="edit" title="編集">${I.edit}</button>
-        <button class="icon-btn" data-action="share" title="共有">${I.share}</button>
-        <button class="icon-btn" data-action="delete" title="削除">${I.trash}</button>
+        <a class="icon-btn" href="#/day/${p.day}" title="この日の日記帳">${I.book}</a>
+        <button class="icon-btn" data-action="more" title="その他">${I.more}</button>
       </div>
     </div>
   </article>`;
 }
 
 // at: 日時を指定（写真の撮影時刻など）/ presetLoc: 位置を指定（写真の撮影場所など）
-async function createPost({ text, photos = [], withLoc, day, kind = 'post', at, presetLoc, takenAt }) {
+async function createPost({ text, photos = [], withLoc, day, kind = 'post', at, presetLoc, takenAt, replyTo, quoteOf }) {
   const now = new Date();
   let createdAt = now.getTime();
   if (at) {
@@ -257,6 +300,8 @@ async function createPost({ text, photos = [], withLoc, day, kind = 'post', at, 
   for (const b of photos) photoIds.push(await db.addPhoto(b));
   const post = { id: uid(), createdAt, day: dayKey(new Date(createdAt)), text, photos: photoIds, loc, kind, fav: false };
   if (takenAt) post.takenAt = takenAt;
+  if (replyTo) post.replyTo = replyTo;
+  if (quoteOf) post.quoteOf = quoteOf;
   await db.putPost(post);
 
   // 地名はあとから非同期で付与
@@ -305,30 +350,41 @@ async function addWeather(id) {
 }
 
 /* ---------- 投稿フォーム ---------- */
-function composerHTML({ day } = {}) {
+function composerHTML({ day, mode } = {}) {
   const today = dayKey();
   const past = day && day !== today;
+  const placeholder = mode === 'reply' ? '続きを書く' : mode === 'quote' ? 'ひとことそえる' : day ? 'この日のできごとは？' : 'いまどうしてる？';
   return `
   <form class="composer" autocomplete="off">
     <div class="avatar">${avatarHTML()}</div>
     <div class="composer-body">
       ${past ? `<div class="when">${fmtDate(parseDay(day).getTime())} の日記として記録</div>` : ''}
-      <textarea name="text" rows="2" placeholder="${day ? 'この日のできごとは？' : 'いまどうしてる？'}"></textarea>
+      <textarea name="text" rows="2" placeholder="${placeholder}"></textarea>
       <div class="thumbs"></div>
       <div class="photo-meta" hidden></div>
       <div class="composer-tools">
         <label class="icon-btn" title="写真を追加">${I.photo}<input type="file" accept="image/*" multiple hidden></label>
         <button type="button" class="icon-btn loc-toggle" title="位置情報をつける" aria-label="位置情報をつける">${I.pin}</button>
-        ${past ? '' : `<button type="button" class="icon-btn checkin" title="いまいる場所を記録">${I.flag}<span>チェックイン</span></button>`}
+        ${past || mode ? '' : `<button type="button" class="icon-btn checkin" title="いまいる場所を記録">${I.flag}<span>チェックイン</span></button>`}
         <span class="spacer"></span>
         <span class="count"></span>
-        <button class="btn" type="submit" disabled>ポスト</button>
+        <button class="btn" type="submit" disabled>${mode === 'reply' ? '返信' : 'ポスト'}</button>
       </div>
     </div>
   </form>`;
 }
 
-function bindComposer(form, { day, onPosted }) {
+const DRAFT_KEY = 'daylog.draft.';
+function loadDraft(key) { try { return localStorage.getItem(DRAFT_KEY + key) || ''; } catch { return ''; } }
+function saveDraft(key, text) {
+  try {
+    if (text.trim()) localStorage.setItem(DRAFT_KEY + key, text);
+    else localStorage.removeItem(DRAFT_KEY + key);
+  } catch { /* 保存できない環境 */ }
+}
+
+// draftKey: 書きかけを自動保存するときのキー / replyTo・quoteOf: 返信・引用
+function bindComposer(form, { day, onPosted, draftKey, replyTo, quoteOf }) {
   const ta = form.querySelector('textarea');
   const thumbs = form.querySelector('.thumbs');
   const submit = form.querySelector('[type=submit]');
@@ -368,6 +424,14 @@ function bindComposer(form, { day, onPosted }) {
   metaEl.addEventListener('click', () => { usePhotoMeta = !usePhotoMeta; renderThumbs(); });
 
   ta.addEventListener('input', refresh);
+  if (draftKey) {
+    ta.value = loadDraft(draftKey);
+    let saveTimer;
+    ta.addEventListener('input', () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => saveDraft(draftKey, ta.value), 300);
+    });
+  }
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) form.requestSubmit();
   });
@@ -399,13 +463,14 @@ function bindComposer(form, { day, onPosted }) {
     try {
       await createPost({
         text: ta.value.trim(), photos: photos.map((p) => p.blob), withLoc, day, kind,
-        at: m?.time, presetLoc: m?.loc, takenAt: m ? photoKey(m) : undefined,
+        at: m?.time, presetLoc: m?.loc, takenAt: m ? photoKey(m) : undefined, replyTo, quoteOf,
       });
       ta.value = '';
+      if (draftKey) saveDraft(draftKey, '');
       photos = [];
       usePhotoMeta = true;
       renderThumbs();
-      toast(kind === 'checkin' ? 'チェックインしました' : 'ポストしました');
+      toast(kind === 'checkin' ? 'チェックインしました' : replyTo ? '返信しました' : 'ポストしました');
       onPosted?.();
     } catch (e) {
       toast(e.message);
@@ -437,20 +502,84 @@ view.addEventListener('click', async (e) => {
       btn.classList.toggle('liked', p.fav);
       break;
     }
-    case 'delete':
-      if (!confirm('このポストを削除しますか？')) return;
-      await db.deletePost(id);
-      article.remove();
-      toast('削除しました');
+    case 'reply':
+      await openComposeDialog('reply', id);
       break;
-    case 'edit':
-      await editPost(id);
+    case 'quote':
+      await openComposeDialog('quote', id);
       break;
-    case 'share':
-      await sharePost(id);
+    case 'more':
+      await openPostMenu(id);
       break;
   }
 });
+
+// 返信・引用の入力画面
+async function openComposeDialog(mode, id) {
+  const target = await db.getPost(id);
+  if (!target) return;
+  const rootId = target.replyTo || target.id; // 返信はいつも一番上のポストにつなげる
+  const preview = `<div class="compose-target">
+      <div class="q-head"><span class="avatar mini">${avatarHTML()}</span><b>${esc(settings.name)}</b><span>· ${fmtDate(target.createdAt)} ${fmtTime(target.createdAt)}</span></div>
+      <div class="q-text">${esc(snippet(target.text, 120)) || (target.photos?.length ? '📷 写真' : '📍 チェックイン')}</div>
+    </div>`;
+  openDialog(`
+    <div class="dlg-head">${mode === 'reply' ? '💬 続きを書く' : '🔁 引用して書く'}</div>
+    <div class="dlg-body compose-dlg">${mode === 'reply' ? preview : ''}${composerHTML({ mode })}${mode === 'quote' ? preview : ''}</div>
+    <div class="dlg-foot"><button class="btn secondary" type="button" data-close>閉じる</button></div>`);
+  const d = $('#dialog');
+  d.querySelector('[data-close]').addEventListener('click', () => d.close());
+  bindComposer(d.querySelector('.composer'), {
+    replyTo: mode === 'reply' ? rootId : undefined,
+    quoteOf: mode === 'quote' ? id : undefined,
+    onPosted: () => { d.close(); router(); },
+  });
+  d.querySelector('textarea').focus();
+}
+
+// 「⋯」メニュー：編集・共有・Xに投稿・削除
+async function openPostMenu(id) {
+  const p = await db.getPost(id);
+  if (!p) return;
+  const choice = await openDialog(`
+    <form method="dialog" class="menu">
+      <button value="edit">${I.edit}<span>編集する</span></button>
+      <button value="share">${I.share}<span>共有する（LINE・メッセージなど）</span></button>
+      <button value="x"><b class="x-logo">𝕏</b><span>Xにも投稿する</span></button>
+      <button value="delete" class="danger">${I.trash}<span>削除する</span></button>
+      <button value="cancel" class="cancel">キャンセル</button>
+    </form>`, 'sheet');
+  if (choice === 'edit') await editPost(id);
+  else if (choice === 'share') await sharePost(id);
+  else if (choice === 'x') await postToX(p);
+  else if (choice === 'delete') await deletePostWithReplies(p);
+}
+
+async function deletePostWithReplies(p) {
+  const replies = (await db.allPosts()).filter((x) => x.replyTo === p.id);
+  const msg = replies.length ? `このポストと、つながっている返信${replies.length}件を削除しますか？` : 'このポストを削除しますか？';
+  if (!confirm(msg)) return;
+  for (const r of replies) await db.deletePost(r.id);
+  await db.deletePost(p.id);
+  toast('削除しました');
+  router();
+}
+
+// Xの投稿画面を開く（文章だけ。写真と場所は送らない）
+async function postToX(p) {
+  if (!p.text) { toast('文章のない投稿はXに出せません'); return; }
+  const ok = await openDialog(`
+    <form method="dialog">
+      <div class="dlg-head">𝕏 Xにも投稿</div>
+      <div class="dlg-body"><div class="field">
+        <div class="x-preview">${esc(p.text)}</div>
+        <div class="help">Xの投稿画面がこの文章入りで開きます。Xで「ポスト」を押すまでは公開されません。写真と場所は送られません（写真も出したいときは「共有する」から）。</div>
+      </div></div>
+      <div class="dlg-foot"><button class="btn secondary" value="cancel">やめる</button><button class="btn" value="ok">Xを開く</button></div>
+    </form>`);
+  if (ok !== 'ok') return;
+  window.open(`https://x.com/intent/post?text=${encodeURIComponent(p.text)}`, '_blank', 'noopener');
+}
 
 async function editPost(id) {
   const p = await db.getPost(id);
@@ -514,6 +643,7 @@ async function renderHome(query, alive) {
   const [posts, todayRec] = await Promise.all([db.allPosts(), db.getDay(dayKey())]);
   if (!alive()) return;
   posts.sort((a, b) => b.createdAt - a.createdAt);
+  indexPosts(posts);
   const st = streakOf(posts);
   setChrome(query ? '検索' : 'ホーム', 'home', !query && st.current
     ? `<button class="streak ${st.todayDone ? '' : 'pending'}" id="streak">🔥 ${st.current}日</button>` : '');
@@ -527,7 +657,7 @@ async function renderHome(query, alive) {
     ${query ? '' : composerHTML()}
     <div class="search"><input type="search" placeholder="キーワード・#タグ・場所で検索" value="${esc(query)}"></div>
     <div id="feed"></div>`;
-  if (!query) bindComposer(view.querySelector('.composer'), { onPosted: router });
+  if (!query) bindComposer(view.querySelector('.composer'), { onPosted: router, draftKey: 'home' });
   const moodCard = view.querySelector('.mood-card');
   if (moodCard) {
     bindMoodButtons(moodCard, dayKey(), (v) => {
@@ -550,15 +680,17 @@ async function renderHome(query, alive) {
   const feed = $('#feed');
   const draw = (q) => {
     const needle = q.trim().toLowerCase();
+    // ふだんはスレッド単位（返信があると上に上がる）、検索中は一致したポストを1つずつ
+    const lastActivity = (r) => Math.max(r.createdAt, ...(replyIndex.get(r.id) || []).map((x) => x.createdAt));
     const list = needle
       ? posts.filter((p) => (p.text || '').toLowerCase().includes(needle) || (p.loc?.name || '').toLowerCase().includes(needle))
-      : posts;
+      : posts.filter(isRoot).sort((a, b) => lastActivity(b) - lastActivity(a));
     let shown = 0;
     const more = () => {
       const chunk = list.slice(shown, shown + PAGE);
       shown += chunk.length;
       feed.querySelector('.more')?.remove();
-      feed.insertAdjacentHTML('beforeend', chunk.map((p) => postHTML(p)).join(''));
+      feed.insertAdjacentHTML('beforeend', chunk.map((p) => (needle ? postHTML(p, { context: true }) : threadHTML(p))).join(''));
       hydratePhotos(feed);
       if (shown < list.length) {
         feed.insertAdjacentHTML('beforeend', '<div class="empty more"><button class="btn secondary">もっと見る</button></div>');
@@ -585,6 +717,9 @@ async function renderDay(day, alive) {
   const [posts, all, dayRec] = await Promise.all([db.postsByDay(day), db.allPosts(), db.getDay(day)]);
   if (!alive()) return;
   posts.sort((a, b) => a.createdAt - b.createdAt);
+  indexPosts(all);
+  // この日のできごと：この日のポスト（返信つき）＋ 別の日のポストへのこの日の返信
+  const diaryItems = posts.filter((p) => isRoot(p) || postIndex.get(p.replyTo).day !== day);
   // その日の天気：昼に近い投稿の天気 ＋ 気温の幅
   const wxPosts = posts.filter((p) => p.weather);
   const mainWx = wxPosts.slice().sort((a, b) => Math.abs(new Date(a.createdAt).getHours() - 13) - Math.abs(new Date(b.createdAt).getHours() - 13))[0]?.weather;
@@ -616,7 +751,9 @@ async function renderDay(day, alive) {
 
     <h2 class="section-title">📝 できごと</h2>
     ${composerHTML({ day })}
-    <div class="diary">${posts.map((p) => postHTML(p, { diary: true })).join('') || '<p class="section-sub" style="padding-top:8px">まだ何も書かれていません ✏️</p>'}</div>
+    <div class="diary">${diaryItems.map((p) => (isRoot(p)
+    ? threadHTML(p, { diary: true, pageDay: day })
+    : postHTML(p, { diary: true, pageDay: day, context: true }))).join('') || '<p class="section-sub" style="padding-top:8px">まだ何も書かれていません ✏️</p>'}</div>
 
     <h2 class="section-title">🐾 足あと
       <label class="btn small secondary title-btn">📷 写真から追加<input type="file" id="photo-trail" accept="image/*" multiple hidden></label></h2>
@@ -626,7 +763,7 @@ async function renderDay(day, alive) {
         <li><span class="num">${i + 1}</span><span class="t">${fmtTime(p.createdAt)}</span><span class="n"><span data-loc-for="${p.id}"><span>${esc(p.loc.name || '（地名を取得できませんでした）')}</span></span></span></li>`).join('')}
       </ol>` : '<p class="section-sub">この日の足あとはまだありません。おでかけ先でチェックインするか、「写真から追加」で撮った写真を選ぶと、ここに地図ができます 🐾</p>'}
 
-    ${past.length ? `<h2 class="section-title">🕰️ 過去の${d.getMonth() + 1}月${d.getDate()}日</h2>${past.map((p) => postHTML(p)).join('')}` : ''}
+    ${past.length ? `<h2 class="section-title">🕰️ 過去の${d.getMonth() + 1}月${d.getDate()}日</h2>${past.map((p) => postHTML(p, { context: true })).join('')}` : ''}
   `;
 
   bindMoodButtons(view.querySelector('.mood-row'), day);
@@ -635,7 +772,7 @@ async function renderDay(day, alive) {
   dateBox.addEventListener('click', () => { try { dateInput.showPicker(); } catch { dateInput.focus(); } });
   dateInput.addEventListener('change', () => { if (isDayKey(dateInput.value)) location.hash = `#/day/${dateInput.value}`; });
 
-  bindComposer(view.querySelector('.composer'), { day, onPosted: router });
+  bindComposer(view.querySelector('.composer'), { day, onPosted: router, draftKey: `day:${day}` });
   hydratePhotos(view);
   $('#photo-trail').addEventListener('change', async (e) => {
     const files = [...e.target.files];
@@ -824,7 +961,11 @@ async function renderSettings(alive) {
           <li>🖼 で写真を4枚までつけられます。</li>
           <li>📍 が青いときは、いまいる場所も一緒に記録されます。タップでオン／オフ。</li>
           <li><code>#おでかけ</code> のように書くとタグになり、タップすると同じタグの投稿が出てきます。</li>
-          <li>投稿の下のボタンで、♡お気に入り・✏️編集（文章や日時）・共有・削除ができます。</li>
+          <li>💬 <b>続きを書く</b>：自分の投稿に返信して、Xのスレッドのようにつなげられます。あとから思ったことや続報に。</li>
+          <li>🔁 <b>引用して書く</b>：過去の投稿を引用して、ひとことそえられます。「1年前の自分」へのツッコミにも。</li>
+          <li>♡ でお気に入り。<b>⋯</b> から編集・共有・削除ができます。</li>
+          <li><b>Xにも投稿</b>：⋯ →「Xにも投稿する」で、その文章入りのXの投稿画面が開きます。人に見せてもいいものだけ選んで出せます（写真と場所は送られません）。</li>
+          <li>書きかけの文章は自動で保存されるので、別の画面に移っても消えません。</li>
         </ul>
       </details>
       <details class="howto">
@@ -907,7 +1048,7 @@ async function renderSettings(alive) {
 
     <h2 class="section-title">🧹 その他</h2>
     <div class="group"><div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div></div>
-    <p class="section-sub" style="padding-top:12px">Daylog v1.3</p>
+    <p class="section-sub" style="padding-top:12px">Daylog v1.4</p>
   </div>`;
 
   const bindText = (id, key) => $(id).addEventListener('change', (e) => {

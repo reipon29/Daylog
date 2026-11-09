@@ -386,3 +386,139 @@ dialog.sheet[open] { margin: auto auto calc(var(--safe-b) + 12px); width: min(94
 .menu .cancel { justify-content: center; color: var(--muted); margin-top: 4px; border-top: 1.5px dashed var(--border); border-radius: 0 0 14px 14px; }
 .x-logo { width: 22px; text-align: center; font-size: 18px; }
 .x-preview { background: var(--bg-elev); border-radius: 14px; padding: 10px 12px; white-space: pre-wrap; word-break: break-word; max-height: 40dvh; overflow-y: auto; }
+
+/* =====================================================================
+   Liquid Glass（iOS 26 風）
+   背景にやわらかな色を敷き、その上にすりガラスの面を重ねる。
+   ・画面の枠（タブバー・上部バー・メニュー）は強いぼかし
+   ・何十枚も並ぶカードは軽いぼかし（iPhoneで重くならないように）
+   ===================================================================== */
+:root {
+  --glass: rgba(255, 255, 255, .5);
+  --glass-strong: rgba(255, 255, 255, .62);
+  --glass-tint: rgba(255, 255, 255, .38);
+  --glass-edge: rgba(255, 255, 255, .85);
+  --glass-hl: inset 0 1px 0 rgba(255, 255, 255, .95), inset 0 -1px 0 rgba(255, 255, 255, .35), inset 0 0 0 1px rgba(255, 255, 255, .45);
+  --glass-shadow: 0 8px 28px rgba(40, 110, 180, .14), 0 1px 3px rgba(40, 70, 110, .08);
+  --blur-strong: blur(26px) saturate(190%);
+  --blur-soft: blur(14px) saturate(160%);
+  --bg-blob1: #9fd6ff; --bg-blob2: #c8beff; --bg-blob3: #a9ecd3; --bg-blob4: #ffc8db;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass: rgba(40, 56, 80, .5);
+    --glass-strong: rgba(36, 50, 72, .62);
+    --glass-tint: rgba(60, 80, 110, .32);
+    --glass-edge: rgba(255, 255, 255, .22);
+    --glass-hl: inset 0 1px 0 rgba(255, 255, 255, .22), inset 0 -1px 0 rgba(255, 255, 255, .06), inset 0 0 0 1px rgba(255, 255, 255, .1);
+    --glass-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+    --bg-blob1: #1d4a75; --bg-blob2: #3a2f6b; --bg-blob3: #164a44; --bg-blob4: #5a2a48;
+  }
+}
+
+/* 背景：ゆっくり動くやわらかな色のにじみ */
+body { background: var(--bg); }
+body::before {
+  content: ""; position: fixed; inset: -20%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(40% 35% at 15% 10%, var(--bg-blob1), transparent 70%),
+    radial-gradient(35% 30% at 90% 20%, var(--bg-blob2), transparent 70%),
+    radial-gradient(40% 35% at 80% 85%, var(--bg-blob3), transparent 70%),
+    radial-gradient(35% 30% at 10% 80%, var(--bg-blob4), transparent 70%);
+  animation: drift 40s ease-in-out infinite alternate;
+}
+@keyframes drift { to { transform: translate3d(4%, -3%, 0) rotate(6deg); } }
+@media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
+
+/* 共通のガラス面 */
+.composer, .post, .thread, .group, .cal, .places, .notice, .mood-card, .day-head, .quote, .compose-target, .health-empty {
+  background: var(--glass) !important;
+  -webkit-backdrop-filter: var(--blur-soft); backdrop-filter: var(--blur-soft);
+  box-shadow: var(--glass-hl), var(--glass-shadow) !important;
+  border: 0;
+}
+.thread > .post { background: transparent !important; box-shadow: none !important; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.thread > .post + .post { border-top: 1px solid var(--glass-edge); }
+.post.checkin { background: linear-gradient(135deg, rgba(95, 208, 165, .22), var(--glass)) !important; }
+.day-head { background: linear-gradient(160deg, rgba(255, 255, 255, .25), var(--glass)) !important; }
+.quote, .compose-target { box-shadow: var(--glass-hl) !important; }
+
+/* 上部バー・タブバー：浮かぶガラス */
+.topbar { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.topbar::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(to bottom, var(--glass-strong) 55%, var(--glass-tint));
+  -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent); mask-image: linear-gradient(to bottom, #000 78%, transparent);
+}
+.tabbar {
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--blur-strong); backdrop-filter: var(--blur-strong);
+  box-shadow: var(--glass-hl), 0 12px 36px rgba(40, 110, 180, .22), 0 2px 6px rgba(0, 0, 0, .06);
+  border-radius: 34px;
+}
+.tabbar a.active {
+  color: var(--accent);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .75), rgba(255, 255, 255, .35));
+  box-shadow: var(--glass-hl), 0 4px 12px rgba(var(--glow), .18);
+}
+@media (prefers-color-scheme: dark) {
+  .tabbar a.active { background: linear-gradient(180deg, rgba(255, 255, 255, .18), rgba(255, 255, 255, .06)); }
+}
+
+/* ボタン：つややかなガラス */
+.btn {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, #fff), var(--accent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .6), inset 0 -2px 4px rgba(0, 60, 120, .15), 0 6px 16px rgba(var(--glow), .35);
+}
+.btn.secondary, select.btn {
+  background: var(--glass) !important; color: var(--text);
+  -webkit-backdrop-filter: var(--blur-soft); backdrop-filter: var(--blur-soft);
+  border: 0; box-shadow: var(--glass-hl), 0 2px 8px rgba(40, 110, 180, .1);
+}
+.btn.danger { background: linear-gradient(180deg, #ff8d98, var(--danger)); }
+.icon-btn:hover, .icon-btn:active { background: var(--glass-tint); }
+.streak { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 4px 12px rgba(255, 140, 90, .25); }
+
+/* 入力欄 */
+.search input, .field input[type=text], .field input[type=number], .field textarea, .field input[type=date], .field input[type=datetime-local] {
+  background: var(--glass-tint) !important; border: 0 !important; box-shadow: var(--glass-hl);
+}
+.search input:focus, .field input:focus, .field textarea:focus { box-shadow: var(--glass-hl), 0 0 0 2px var(--accent); }
+
+/* 数値のタイル：色つきガラス */
+.stat-tile { background: color-mix(in srgb, var(--tint1) 70%, transparent); box-shadow: var(--glass-hl); -webkit-backdrop-filter: var(--blur-soft); backdrop-filter: var(--blur-soft); }
+.stat-tile:nth-child(5n+2) { background: color-mix(in srgb, var(--tint2) 70%, transparent); }
+.stat-tile:nth-child(5n+3) { background: color-mix(in srgb, var(--tint3) 70%, transparent); }
+.stat-tile:nth-child(5n+4) { background: color-mix(in srgb, var(--tint4) 70%, transparent); }
+.stat-tile:nth-child(5n+5) { background: color-mix(in srgb, var(--tint5) 70%, transparent); }
+.stat-tile .sub { font-size: 11px; font-weight: 700; color: var(--muted); margin-top: 2px; }
+.cal a.has { background: color-mix(in srgb, var(--tint1) 75%, transparent); box-shadow: var(--glass-hl); }
+
+/* 地図：ガラスの額縁＋距離のバッジ */
+.map { box-shadow: var(--glass-hl), var(--glass-shadow); border: 3px solid var(--glass-edge); }
+.map-wrap { position: relative; }
+.map-badge {
+  position: absolute; top: 12px; left: 24px; z-index: 2;
+  padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 900; color: var(--text);
+  background: var(--glass-strong); -webkit-backdrop-filter: var(--blur-strong); backdrop-filter: var(--blur-strong);
+  box-shadow: var(--glass-hl), 0 4px 14px rgba(40, 110, 180, .18);
+}
+.section-sub.tiny { font-size: 11px; padding-top: 2px; }
+
+/* ダイアログ・メニュー・トースト */
+dialog {
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--blur-strong); backdrop-filter: var(--blur-strong);
+  box-shadow: var(--glass-hl), 0 24px 60px rgba(20, 50, 90, .3);
+}
+dialog::backdrop { background: rgba(30, 50, 80, .18); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+dialog.lightbox[open] { -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
+.compose-dlg .composer { background: var(--glass-tint) !important; }
+#toast {
+  background: var(--glass-strong); color: var(--text);
+  -webkit-backdrop-filter: var(--blur-strong); backdrop-filter: var(--blur-strong);
+  box-shadow: var(--glass-hl), 0 8px 24px rgba(20, 50, 90, .25);
+}
+.maplibregl-popup-content { background: rgba(255, 255, 255, .8); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.maplibregl-popup-tip { display: none; }

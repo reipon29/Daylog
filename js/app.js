@@ -119,6 +119,33 @@ function bindMoodButtons(root, date, onChange) {
   }));
 }
 
+/* ================= 移動距離 ================= */
+// 2点間の距離（km）
+function haversine(a, b) {
+  const R = 6371;
+  const rad = (x) => (x * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+// 足あとを時間順につないだ距離。日をまたぐ移動は数えない（日ごとに合計）
+function trailKm(posts) {
+  const byDay = new Map();
+  for (const p of posts) {
+    if (!p.loc) continue;
+    if (!byDay.has(p.day)) byDay.set(p.day, []);
+    byDay.get(p.day).push(p);
+  }
+  let km = 0;
+  for (const list of byDay.values()) {
+    list.sort((a, b) => a.createdAt - b.createdAt);
+    for (let i = 1; i < list.length; i++) km += haversine(list[i - 1].loc, list[i].loc);
+  }
+  return km;
+}
+const fmtKm = (km) => (km < 10 ? km.toFixed(1) : Math.round(km).toLocaleString());
+
 /* ================= 連続記録 ================= */
 function streakOf(posts) {
   const days = new Set(posts.map((p) => p.day));
@@ -758,7 +785,9 @@ async function renderDay(day, alive) {
     <h2 class="section-title">🐾 足あと
       <label class="btn small secondary title-btn">📷 写真から追加<input type="file" id="photo-trail" accept="image/*" multiple hidden></label></h2>
     ${located.length ? `
-      <div id="daymap" class="map"></div>
+      <div class="map-wrap"><div id="daymap" class="map"></div>
+        ${located.length > 1 ? `<div class="map-badge">🚶 約${fmtKm(trailKm(located))}km</div>` : ''}</div>
+      ${located.length > 1 ? '<p class="section-sub tiny">移動距離は足あとを直線でつないだおおよその距離です</p>' : ''}
       <ol class="places">${located.map((p, i) => `
         <li><span class="num">${i + 1}</span><span class="t">${fmtTime(p.createdAt)}</span><span class="n"><span data-loc-for="${p.id}"><span>${esc(p.loc.name || '（地名を取得できませんでした）')}</span></span></span></li>`).join('')}
       </ol>` : '<p class="section-sub">この日の足あとはまだありません。おでかけ先でチェックインするか、「写真から追加」で撮った写真を選ぶと、ここに地図ができます 🐾</p>'}
@@ -861,6 +890,7 @@ async function renderCalendar(ym, alive) {
     byDay.set(p.day, e);
   }
   const monthPosts = [...byDay.values()].reduce((s, e) => s + e.n, 0);
+  const monthKm = trailKm(posts.filter((p) => p.day.startsWith(ym)));
 
   const first = new Date(y, m - 1, 1);
   const daysIn = new Date(y, m, 0).getDate();
@@ -891,7 +921,7 @@ async function renderCalendar(ym, alive) {
     <div class="stat-grid">
       <div class="stat-tile"><div class="label">ポスト</div><div class="value">${monthPosts}<span class="unit">件</span></div></div>
       <div class="stat-tile"><div class="label">書いた日</div><div class="value">${byDay.size}<span class="unit">日</span></div></div>
-      <div class="stat-tile"><div class="label">足あと</div><div class="value">${[...byDay.values()].reduce((n, e) => n + e.loc, 0)}<span class="unit">か所</span></div></div>
+      <div class="stat-tile"><div class="label">足あと</div><div class="value">${[...byDay.values()].reduce((n, e) => n + e.loc, 0)}<span class="unit">か所</span></div><div class="sub">🚶 約${fmtKm(monthKm)}km</div></div>
       <div class="stat-tile"><div class="label">🔥 連続記録</div><div class="value">${st.current}<span class="unit">日</span></div></div>
       <div class="stat-tile"><div class="label">最長記録</div><div class="value">${st.best}<span class="unit">日</span></div></div>
       <div class="stat-tile"><div class="label">今月の気分</div><div class="value">${monthMood(moods, ym)}</div></div>
@@ -927,7 +957,9 @@ async function renderMap(range, alive) {
     view.innerHTML = '<div class="empty"><span class="emoji">🐾</span><strong>まだ足あとがありません</strong>ポストに位置情報をつけるか、チェックインしてみましょう。</div>';
     return;
   }
-  view.innerHTML = '<div id="bigmap" class="map tall"></div>';
+  const places = new Set(located.map((p) => `${p.loc.lat.toFixed(3)},${p.loc.lng.toFixed(3)}`)).size;
+  view.innerHTML = `<div class="map-wrap"><div id="bigmap" class="map tall"></div>
+    <div class="map-badge">🐾 ${places}か所 ・ 🚶 約${fmtKm(trailKm(located))}km</div></div>`;
   try {
     await createMap($('#bigmap'), located, {
       maxZoom: 15,
@@ -1048,7 +1080,7 @@ async function renderSettings(alive) {
 
     <h2 class="section-title">🧹 その他</h2>
     <div class="group"><div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div></div>
-    <p class="section-sub" style="padding-top:12px">Daylog v1.4</p>
+    <p class="section-sub" style="padding-top:12px">Daylog v1.5</p>
   </div>`;
 
   const bindText = (id, key) => $(id).addEventListener('change', (e) => {

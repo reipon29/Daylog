@@ -86,6 +86,7 @@ const I = {
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   reply: '<svg viewBox="0 0 24 24"><path d="M4 12a8 7 0 0 1 8-7h0a8 7 0 0 1 0 14H9l-5 3 1.5-4.5A6.8 6.8 0 0 1 4 12z"/></svg>',
   quote: '<svg viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3M18 7v5M6 17v-5"/></svg>',
+  flame: '<svg viewBox="0 0 24 24"><path d="M12 22c4 0 7-2.8 7-6.8 0-3.4-2.2-5.6-3.6-7.6-.4 1.7-1.4 2.9-2.6 3.4.3-3.2-.9-6.3-3.8-8C9.3 6 5 8.6 5 15.2 5 19.2 8 22 12 22z"/></svg>',
   more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>',
   left: '<svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg>',
   right: '<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>',
@@ -250,10 +251,10 @@ function quoteHTML(p) {
   if (!p.quoteOf) return '';
   const q = postIndex.get(p.quoteOf);
   if (!q) return '<div class="quote gone">この投稿は削除されました</div>';
-  const body = q.text ? esc(snippet(q.text, 140)) : (q.photos?.length ? '📷 写真' : (q.kind === 'checkin' ? '📍 チェックイン' : ''));
+  const body = q.text ? esc(snippet(q.text, 140)) : (q.photos?.length ? '写真' : (q.kind === 'checkin' ? 'チェックイン' : ''));
   return `<a class="quote" href="#/day/${q.day}">
     <div class="q-head"><span class="avatar mini">${avatarHTML()}</span><b>${esc(settings.name)}</b><span>· ${fmtDate(q.createdAt)}</span></div>
-    <div class="q-text">${body}${q.loc?.name ? `<span class="q-loc">📍${esc(q.loc.name)}</span>` : ''}</div></a>`;
+    <div class="q-text">${body}${q.loc?.name ? `<span class="q-loc">${I.pin}${esc(q.loc.name)}</span>` : ''}</div></a>`;
 }
 
 // スレッド：元のポスト＋自分への返信をつなげて表示
@@ -444,7 +445,7 @@ function bindComposer(form, { day, onPosted, draftKey, replyTo, quoteOf }) {
     if (m) {
       const what = [m.loc && '場所', m.time && '日時'].filter(Boolean).join('と');
       metaEl.innerHTML = `<button type="button" class="meta-chip ${usePhotoMeta ? 'on' : ''}">
-        <span class="check">${usePhotoMeta ? '✓' : ''}</span>📷 写真を撮った${what}で記録
+        <span class="check">${usePhotoMeta ? '✓' : ''}</span>写真を撮った${what}で記録
         ${m.time ? `<small>${fmtDate(m.time)} ${fmtTime(m.time)}</small>` : ''}</button>`;
     }
   };
@@ -549,10 +550,10 @@ async function openComposeDialog(mode, id) {
   const rootId = target.replyTo || target.id; // 返信はいつも一番上のポストにつなげる
   const preview = `<div class="compose-target">
       <div class="q-head"><span class="avatar mini">${avatarHTML()}</span><b>${esc(settings.name)}</b><span>· ${fmtDate(target.createdAt)} ${fmtTime(target.createdAt)}</span></div>
-      <div class="q-text">${esc(snippet(target.text, 120)) || (target.photos?.length ? '📷 写真' : '📍 チェックイン')}</div>
+      <div class="q-text">${esc(snippet(target.text, 120)) || (target.photos?.length ? '写真' : 'チェックイン')}</div>
     </div>`;
   openDialog(`
-    <div class="dlg-head">${mode === 'reply' ? '💬 続きを書く' : '🔁 引用して書く'}</div>
+    <div class="dlg-head">${mode === 'reply' ? '続きを書く' : '引用して書く'}</div>
     <div class="dlg-body compose-dlg">${mode === 'reply' ? preview : ''}${composerHTML({ mode })}${mode === 'quote' ? preview : ''}</div>
     <div class="dlg-foot"><button class="btn secondary" type="button" data-close>閉じる</button></div>`);
   const d = $('#dialog');
@@ -820,7 +821,7 @@ async function renderHome(query, alive) {
   indexPosts(posts);
   const st = streakOf(posts);
   setChrome(query ? '検索' : 'ホーム', 'home', !query && st.current
-    ? `<button class="streak ${st.todayDone ? '' : 'pending'}" id="streak">🔥 ${st.current}日</button>` : '');
+    ? `<button class="streak ${st.todayDone ? '' : 'pending'}" id="streak">${I.flame}${st.current}日</button>` : '');
   $('#streak')?.addEventListener('click', () => toast(st.todayDone
     ? `${st.current}日連続で記録中！（最長 ${st.best}日）`
     : `今日書くと${st.current + 1}日連続！（最長 ${st.best}日）`, 3500));
@@ -872,8 +873,8 @@ async function renderHome(query, alive) {
       }
     };
     feed.innerHTML = list.length ? '' : (needle
-      ? '<div class="empty"><span class="emoji">🔍</span><strong>見つかりませんでした</strong>別のキーワードで試してください</div>'
-      : '<div class="empty"><span class="emoji">🐣</span><strong>ようこそ Daylog へ</strong>いまの気持ちや、行った場所をつぶやいてみましょう。</div>');
+      ? '<div class="empty"><strong>見つかりませんでした</strong>別のキーワードで試してください</div>'
+      : '<div class="empty"><strong>ようこそ Daylog へ</strong>いまの気持ちや、行った場所をつぶやいてみましょう。</div>');
     more();
   };
   let t;
@@ -923,23 +924,23 @@ async function renderDay(day, alive) {
       </div>
     </div>
 
-    <h2 class="section-title">📝 できごと</h2>
+    <h2 class="section-title">できごと</h2>
     ${composerHTML({ day })}
     <div class="diary">${diaryItems.map((p) => (isRoot(p)
     ? threadHTML(p, { diary: true, pageDay: day })
-    : postHTML(p, { diary: true, pageDay: day, context: true }))).join('') || '<p class="section-sub" style="padding-top:8px">まだ何も書かれていません ✏️</p>'}</div>
+    : postHTML(p, { diary: true, pageDay: day, context: true }))).join('') || '<p class="section-sub" style="padding-top:8px">まだ何も書かれていません</p>'}</div>
 
-    <h2 class="section-title">🐾 足あと
-      <label class="btn small secondary title-btn">📷 写真から追加<input type="file" id="photo-trail" accept="image/*" multiple hidden></label></h2>
+    <h2 class="section-title">足あと
+      <label class="btn small secondary title-btn">${I.photo}写真から追加<input type="file" id="photo-trail" accept="image/*" multiple hidden></label></h2>
     ${located.length ? `
       <div class="map-wrap"><div id="daymap" class="map"></div>
-        ${located.length > 1 ? `<div class="map-badge">🚶 約${fmtKm(trailKm(located))}km</div>` : ''}</div>
+        ${located.length > 1 ? `<div class="map-badge">移動 約${fmtKm(trailKm(located))}km</div>` : ''}</div>
       ${located.length > 1 ? '<p class="section-sub tiny">移動距離は足あとを直線でつないだおおよその距離です</p>' : ''}
       <ol class="places">${located.map((p, i) => `
         <li><span class="num">${i + 1}</span><span class="t">${fmtTime(p.createdAt)}</span><span class="n"><span data-loc-for="${p.id}"><span>${esc(p.loc.name || '（地名を取得できませんでした）')}</span></span></span></li>`).join('')}
-      </ol>` : '<p class="section-sub">この日の足あとはまだありません。おでかけ先でチェックインするか、「写真から追加」で撮った写真を選ぶと、ここに地図ができます 🐾</p>'}
+      </ol>` : '<p class="section-sub">この日の足あとはまだありません。おでかけ先でチェックインするか、「写真から追加」で撮った写真を選ぶと、ここに地図ができます。</p>'}
 
-    ${past.length ? `<h2 class="section-title">🕰️ 過去の${d.getMonth() + 1}月${d.getDate()}日</h2>${past.map((p) => postHTML(p, { context: true })).join('')}` : ''}
+    ${past.length ? `<h2 class="section-title">過去の${d.getMonth() + 1}月${d.getDate()}日</h2>${past.map((p) => postHTML(p, { context: true })).join('')}` : ''}
   `;
 
   bindMoodButtons(view.querySelector('.mood-row'), day);
@@ -1008,7 +1009,7 @@ async function drawDayMap(el, located) {
         map.addLayer({
           id: 'route', type: 'line', source: 'route',
           layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-color': '#3fa9f5', 'line-width': 6, 'line-dasharray': [0, 2] },
+          paint: { 'line-color': '#007aff', 'line-width': 6, 'line-dasharray': [0, 2] },
         });
       },
     });
@@ -1068,8 +1069,8 @@ async function renderCalendar(ym, alive) {
     <div class="stat-grid">
       <div class="stat-tile"><div class="label">ポスト</div><div class="value">${monthPosts}<span class="unit">件</span></div></div>
       <div class="stat-tile"><div class="label">書いた日</div><div class="value">${byDay.size}<span class="unit">日</span></div></div>
-      <div class="stat-tile"><div class="label">足あと</div><div class="value">${[...byDay.values()].reduce((n, e) => n + e.loc, 0)}<span class="unit">か所</span></div><div class="sub">🚶 約${fmtKm(monthKm)}km</div></div>
-      <div class="stat-tile"><div class="label">🔥 連続記録</div><div class="value">${st.current}<span class="unit">日</span></div></div>
+      <div class="stat-tile"><div class="label">足あと</div><div class="value">${[...byDay.values()].reduce((n, e) => n + e.loc, 0)}<span class="unit">か所</span></div><div class="sub">移動 約${fmtKm(monthKm)}km</div></div>
+      <div class="stat-tile"><div class="label">連続記録</div><div class="value">${st.current}<span class="unit">日</span></div></div>
       <div class="stat-tile"><div class="label">最長記録</div><div class="value">${st.best}<span class="unit">日</span></div></div>
       <div class="stat-tile"><div class="label">今月の気分</div><div class="value">${monthMood(moods, ym)}</div></div>
     </div>
@@ -1101,16 +1102,16 @@ async function renderMap(range, alive) {
   if (!alive()) return;
 
   if (!located.length) {
-    view.innerHTML = '<div class="empty"><span class="emoji">🐾</span><strong>まだ足あとがありません</strong>ポストに位置情報をつけるか、チェックインしてみましょう。</div>';
+    view.innerHTML = '<div class="empty"><strong>まだ足あとがありません</strong>ポストに位置情報をつけるか、チェックインしてみましょう。</div>';
     return;
   }
   const places = new Set(located.map((p) => `${p.loc.lat.toFixed(3)},${p.loc.lng.toFixed(3)}`)).size;
   view.innerHTML = `<div class="map-wrap"><div id="bigmap" class="map tall"></div>
-    <div class="map-badge">🐾 ${places}か所 ・ 🚶 約${fmtKm(trailKm(located))}km</div></div>`;
+    <div class="map-badge">${places}か所 ・ 移動 約${fmtKm(trailKm(located))}km</div></div>`;
   try {
     await createMap($('#bigmap'), located, {
       maxZoom: 15,
-      makePin: () => pinEl('paw', '🐾'),
+      makePin: () => pinEl('dot-pin', ''),
       popupHTML: (p) => `<a href="#/day/${p.day}"><b>${fmtDate(p.createdAt)} ${fmtTime(p.createdAt)}</b></a><br>${esc(p.loc.name || '')}${p.text ? `<br>${esc(p.text.slice(0, 80))}` : ''}`,
     });
   } catch (e) {
@@ -1131,18 +1132,18 @@ async function renderSettings(alive) {
 
   view.innerHTML = `
   <div class="settings">
-    <h2 class="section-title">📖 使い方</h2>
+    <h2 class="section-title">使い方</h2>
     <div class="group guide">
       <details class="howto">
         <summary>つぶやく</summary>
         <ul>
           <li><b>ホーム</b>の「いまどうしてる？」に書いて<b>ポスト</b>。</li>
           <li>🖼 で写真を4枚までつけられます。</li>
-          <li>📍 が青いときは、いまいる場所も一緒に記録されます。タップでオン／オフ。</li>
+          <li>位置ボタンが青いときは、いまいる場所も一緒に記録されます。タップでオン／オフ。</li>
           <li><code>#おでかけ</code> のように書くとタグになり、タップすると同じタグの投稿が出てきます。</li>
-          <li>💬 <b>続きを書く</b>：自分の投稿に返信して、Xのスレッドのようにつなげられます。あとから思ったことや続報に。</li>
-          <li>🔁 <b>引用して書く</b>：過去の投稿を引用して、ひとことそえられます。「1年前の自分」へのツッコミにも。</li>
-          <li>♡ でお気に入り。<b>⋯</b> から編集・共有・削除ができます。</li>
+          <li><b>続きを書く</b>（吹き出しボタン）：自分の投稿に返信して、Xのスレッドのようにつなげられます。あとから思ったことや続報に。</li>
+          <li><b>引用して書く</b>（矢印のボタン）：過去の投稿を引用して、ひとことそえられます。「1年前の自分」へのツッコミにも。</li>
+          <li>ハートでお気に入り。<b>⋯</b> から編集・共有・削除ができます。</li>
           <li><b>Xにも投稿</b>：⋯ →「Xにも投稿する」で、その文章入りのXの投稿画面が開きます。人に見せてもいいものだけ選んで出せます（写真と場所は送られません）。</li>
           <li>書きかけの文章は自動で保存されるので、別の画面に移っても消えません。</li>
         </ul>
@@ -1150,18 +1151,18 @@ async function renderSettings(alive) {
       <details class="howto">
         <summary>行った場所を残す（足あと）</summary>
         <ul>
-          <li>🏳 <b>チェックイン</b>：文章なしで、いまいる場所だけを記録します。</li>
-          <li><b>写真の場所で記録</b>：撮影場所つきの写真を選ぶと「📷 写真を撮った場所と日時で記録」が出て、その時間・場所で投稿されます。</li>
-          <li><b>あとからまとめて</b>：日記帳の「足あと」にある <b>📷 写真から追加</b> で、その日の写真をまとめて選ぶと、撮った順に地図に並びます。同じ写真は二重に入りません。</li>
+          <li><b>チェックイン</b>：文章なしで、いまいる場所だけを記録します。</li>
+          <li><b>写真の場所で記録</b>：撮影場所つきの写真を選ぶと「写真を撮った場所と日時で記録」が出て、その時間・場所で投稿されます。</li>
+          <li><b>あとからまとめて</b>：日記帳の「足あと」にある <b>写真から追加</b> で、その日の写真をまとめて選ぶと、撮った順に地図に並びます。同じ写真は二重に入りません。</li>
           <li>アプリを閉じている間は位置を記録できません。出かけた先でチェックインするか、夜に写真から追加するのがおすすめです。</li>
         </ul>
       </details>
       <details class="howto">
         <summary>日記帳・カレンダー・足あと</summary>
         <ul>
-          <li><b>今日の気分</b>：ホームの「今日の気分は？」か、日記帳の日付の下で 😆〜😢 を選びます。もう一度押すと取り消し。カレンダーにも表示されます。</li>
+          <li><b>今日の気分</b>：ホームの「今日の気分は？」か、日記帳の日付の下で5段階から選びます。もう一度押すと取り消し。カレンダーにも表示されます。</li>
           <li><b>天気</b>：位置つきで投稿すると、その時の天気と気温が自動で記録されます（投稿の時刻の横と、日記帳の日付の下に表示）。</li>
-          <li><b>🔥 連続記録</b>：毎日投稿すると、ホーム右上に何日続いているかが出ます。タップすると最長記録も見られます。</li>
+          <li><b>連続記録</b>：毎日投稿すると、ホーム右上に何日続いているかが出ます。タップすると最長記録も見られます。</li>
           <li><b>日記帳</b>：1日1ページ。その日のできごとと、行った場所の地図が並びます。下には「過去の同じ日」も出ます。</li>
           <li>‹ › で前後の日へ。真ん中の日付をタップすると日付を選べます。</li>
           <li>過去の日のページで書くと、その日の日記として残せます。</li>
@@ -1188,7 +1189,7 @@ async function renderSettings(alive) {
       </details>
     </div>
 
-    <h2 class="section-title">👤 プロフィール</h2>
+    <h2 class="section-title">プロフィール</h2>
     <div class="group">
     <div class="field row avatar-field">
       <div class="avatar big">${avatarHTML()}</div>
@@ -1205,7 +1206,7 @@ async function renderSettings(alive) {
     <div class="field"><label for="s-handle">ユーザー名</label><input id="s-handle" type="text" value="${esc(settings.handle)}"></div>
     </div>
 
-    <h2 class="section-title">📍 位置情報</h2>
+    <h2 class="section-title">位置情報</h2>
     <div class="group">
     <div class="field row"><div><div class="label">ポストに位置をつける</div><div class="help">新しいポストの位置ボタンを最初からONにします</div></div>
       <label class="switch"><input type="checkbox" id="s-autoloc" ${settings.autoLocation ? 'checked' : ''}><span></span></label></div>
@@ -1215,7 +1216,7 @@ async function renderSettings(alive) {
       <label class="switch"><input type="checkbox" id="s-weather" ${settings.weather ? 'checked' : ''}><span></span></label></div>
     </div>
 
-    <h2 class="section-title">💾 バックアップ</h2>
+    <h2 class="section-title">バックアップ</h2>
     <div class="group"><div class="field">
       <div class="help">データはこの端末の中だけに保存されています。機種変更やもしもに備えて、ときどき書き出してください。
         <br>前回のバックアップ：${settings.lastBackupAt ? fmtDate(settings.lastBackupAt) : 'まだありません'}${storage ? `<br>${storage}` : ''}</div>
@@ -1225,9 +1226,9 @@ async function renderSettings(alive) {
       </div>
     </div></div>
 
-    <h2 class="section-title">🧹 その他</h2>
+    <h2 class="section-title">その他</h2>
     <div class="group"><div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div></div>
-    <p class="section-sub" style="padding-top:12px">Daylog v1.5</p>
+    <p class="section-sub" style="padding-top:12px">Daylog v1.6</p>
   </div>`;
 
   const bindText = (id, key) => $(id).addEventListener('change', (e) => {
@@ -1285,7 +1286,7 @@ function backupNoticeHTML(posts) {
   const days = Math.floor((Date.now() - base) / 86400000);
   if (days < 14) return '';
   return `<div class="notice">
-    <div><b>💾 ${settings.lastBackupAt ? `前回のバックアップから${days}日たちました` : 'まだバックアップがありません'}</b>
+    <div><b>${settings.lastBackupAt ? `前回のバックアップから${days}日たちました` : 'まだバックアップがありません'}</b>
     <div class="help">iPhoneが壊れたり機種変更したりしても日記が消えないように、書き出しておきましょう。</div></div>
     <div class="btn-row"><button class="btn small" data-bk="now">書き出す</button><button class="btn small secondary" data-bk="later">あとで</button></div>
   </div>`;

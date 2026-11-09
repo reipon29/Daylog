@@ -2,7 +2,7 @@
 // ・アプリのファイルは「ネット優先」：つながっていれば常に最新、圏外のときだけ保存した版
 // ・外部ライブラリ（中身が変わらない）は保存した版を優先
 // ファイルを更新したら VERSION を上げる。
-const VERSION = 'daylog-v15';
+const VERSION = 'daylog-v16';
 const SHELL = [
   './',
   './index.html',
@@ -19,7 +19,7 @@ const SHELL = [
   './icons/icon-192.png',
   './icons/icon-512.png',
 ];
-const CDN = ['https://cdnjs.cloudflare.com/', 'https://fonts.googleapis.com/', 'https://fonts.gstatic.com/'];
+const CDN = ['https://cdnjs.cloudflare.com/'];
 
 self.addEventListener('install', (e) => {
   // ブラウザの HTTP キャッシュを通さず、必ず最新を取りにいく

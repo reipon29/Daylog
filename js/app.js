@@ -1225,7 +1225,7 @@ const mealKcal = (rec) => (rec?.meals || []).reduce((sum, m) => sum + (Number(m.
 // 1日の体の記録。以前ヘルスケアから取り込んだ歩数・体重があればそれも使う
 function bodyOf(rec, h) {
   const pick = (k) => (rec && k in rec ? rec[k] : h?.[k] ?? null);
-  return { weight: pick('weight'), steps: pick('steps'), kcal: mealKcal(rec), meals: rec?.meals || [] };
+  return { weight: pick('weight'), steps: pick('steps'), kcal: mealKcal(rec), meals: rec?.meals || [], skipped: rec?.skipped || [] };
 }
 const signed = (v, d = 1) => `${v > 0 ? '+' : v < 0 ? '−' : '±'}${fmtNum(Math.abs(v), d)}`;
 
@@ -1268,7 +1268,7 @@ async function renderBody(day, alive) {
       <div class="kcal-ring ${over ? 'over' : ''}">
         <svg viewBox="0 0 120 120" aria-hidden="true">
           <circle cx="60" cy="60" r="${R}" class="track"/>
-          <circle cx="60" cy="60" r="${R}" class="prog" stroke-dasharray="${(C * pct).toFixed(1)} ${C.toFixed(1)}"/>
+          ${pct > 0 ? `<circle cx="60" cy="60" r="${R}" class="prog" stroke-dasharray="${(C * pct).toFixed(1)} ${C.toFixed(1)}"/>` : ''}
         </svg>
         <div class="kr-center">
           <div class="kr-label">食べた</div>
@@ -1293,13 +1293,26 @@ async function renderBody(day, alive) {
     </section>
 
     <h2 class="section-title">食事</h2>
-    ${MEALS.map((m) => mealCardHTML(m, b.meals.filter((x) => x.type === m.key))).join('')}
+    ${MEALS.map((m) => mealCardHTML(m, b.meals.filter((x) => x.type === m.key), b.skipped.includes(m.key))).join('')}
 
     <h2 class="section-title">推移</h2>
     ${bodyChartsHTML(day, B, goal, wGoal)}`;
 
   view.querySelectorAll('[data-edit]').forEach((el) => el.addEventListener('click', () => bodyNumberDialog(day, el.dataset.edit)));
   view.querySelectorAll('[data-add]').forEach((el) => el.addEventListener('click', () => mealDialog(day, el.dataset.add)));
+  // 「食べてない」を記録／取り消し
+  view.querySelectorAll('[data-skip]').forEach((el) => el.addEventListener('click', async () => {
+    const key = el.dataset.skip;
+    const rec = (await db.getDay(day)) || { date: day };
+    const set = new Set(rec.skipped || []);
+    const label = MEALS.find((m) => m.key === key).label;
+    if (set.has(key)) { set.delete(key); toast(`${label}の「食べてない」を取り消しました`); }
+    else { set.add(key); toast(`${label}は食べてない、と記録しました`); }
+    rec.skipped = [...set];
+    rec.updatedAt = Date.now();
+    await db.putDay(rec);
+    router();
+  }));
   view.querySelectorAll('[data-meal]').forEach((el) => el.addEventListener('click', () => {
     const item = b.meals.find((x) => x.id === el.dataset.meal);
     if (item) mealDialog(day, item.type, item);
@@ -1308,13 +1321,13 @@ async function renderBody(day, alive) {
   bindCharts(view);
 }
 
-function mealCardHTML(m, items) {
+function mealCardHTML(m, items, skipped = false) {
   const sum = items.reduce((t, x) => t + (Number(x.kcal) || 0), 0);
   return `
     <div class="meal-card meal-${m.key}">
       <div class="meal-head">
         <span class="mh-name">${m.label}</span>
-        <span class="mh-kcal">${sum ? `${fmtNum(sum)}kcal` : ''}</span>
+        <span class="mh-kcal">${sum ? `${fmtNum(sum)}kcal` : skipped ? '食べてない' : ''}</span>
         <button type="button" class="icon-btn add" data-add="${m.key}" aria-label="${m.label}を追加">${I.plus}</button>
       </div>
       ${items.length ? items.map((it) => `
@@ -1322,7 +1335,12 @@ function mealCardHTML(m, items) {
           ${it.photo ? `<img data-photo="${esc(it.photo)}" alt="">` : ''}
           <span class="mi-name">${esc(it.name || '（名前なし）')}</span>
           <span class="mi-kcal">${it.kcal != null ? `${fmtNum(it.kcal)}kcal` : ''}</span>
-        </button>`).join('') : `<button type="button" class="meal-empty" data-add="${m.key}">${I.plus}${m.label}を記録</button>`}
+        </button>`).join('') : skipped
+    ? `<button type="button" class="meal-skipped" data-skip="${m.key}">${m.label}は食べてない<span>取り消す</span></button>`
+    : `<div class="meal-empty-row">
+        <button type="button" class="meal-empty" data-add="${m.key}">${I.plus}${m.label}を記録</button>
+        <button type="button" class="meal-skip" data-skip="${m.key}">食べてない</button>
+      </div>`}
     </div>`;
 }
 
@@ -1404,6 +1422,7 @@ async function mealDialog(day, type, item) {
     }
     const next = { id: item?.id || uid(), type: t, name, kcal, photo, at: item?.at || Date.now() };
     rec.meals = item ? rec.meals.map((x) => (x.id === item.id ? next : x)) : [...rec.meals, next];
+    rec.skipped = (rec.skipped || []).filter((k) => k !== t);
     toast(item ? '保存しました' : `${MEALS.find((m) => m.key === t).label}を記録しました`);
   }
   rec.updatedAt = Date.now();
@@ -1743,6 +1762,7 @@ async function renderSettings(alive) {
         <ul>
           <li><b>からだ</b>タブで、朝ごはん・昼ごはん・夜ごはん・間食ごとに、食べたものとカロリーを記録できます。写真もつけられます。</li>
           <li>一度入れた食べものは「よく食べるもの」に出るので、次からはタップで入れられます。</li>
+          <li>食事を抜いた日は「食べてない」を押して記録できます。</li>
           <li>上の丸いグラフで、目標カロリーに対してどれくらい食べたかがわかります。目標は設定の「からだ」で変えられます。</li>
           <li>体重・歩数はタップして入力。歩数は、iPhoneのショートカットで「歩数: 8123」のようにコピーしておくと貼り付けで入れられます。</li>
           <li>下の「推移」で、体重・カロリー・歩数のグラフが見られます。</li>

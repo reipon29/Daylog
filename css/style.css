@@ -749,3 +749,11 @@ a.stat-tile { color: var(--text); display: block; }
 .chart-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .goal-key { font-size: 12px; font-weight: 600; color: #e0668f; display: inline-flex; align-items: center; gap: 6px; }
 .goal-key::before { content: ""; width: 16px; border-top: 1.5px dashed var(--pink); }
+
+/* 「食べてない」 */
+.meal-empty-row { display: flex; align-items: center; border-top: 1px dashed var(--sep); }
+.meal-empty-row .meal-empty { border-top: 0; flex: 1; }
+.meal-skip { flex: none; border: 0; cursor: pointer; margin-right: 12px; padding: 6px 12px; border-radius: 999px; background: var(--fill); color: var(--muted); font-size: 13px; font-weight: 600; }
+.meal-skip:active { opacity: .6; }
+.meal-skipped { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; border-top: 1px solid var(--sep); background: transparent; padding: 11px 16px; color: var(--muted); font-size: 15px; cursor: pointer; text-align: left; }
+.meal-skipped span { font-size: 13px; color: var(--btn-text); }

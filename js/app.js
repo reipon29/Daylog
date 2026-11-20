@@ -274,7 +274,7 @@ function threadHTML(root, opts = {}) {
   return `<div class="thread">${postHTML(root, opts)}${replies.map((r) => postHTML(r, { ...opts, inThread: true })).join('')}</div>`;
 }
 
-function postHTML(p, { diary = false, pageDay = null, inThread = false, context = false } = {}) {
+function postHTML(p, { diary = false, pageDay = null, inThread = false, context = false, noTime = false } = {}) {
   const photos = p.photos || [];
   const media = photos.length
     ? `<div class="media n${Math.min(photos.length, 4)}">${photos.slice(0, 4)
@@ -301,7 +301,7 @@ function postHTML(p, { diary = false, pageDay = null, inThread = false, context 
   <article class="post ${p.kind === 'checkin' ? 'checkin' : ''} ${inThread ? 'in-thread' : ''} ${p.id === freshId ? 'fresh' : ''}" data-id="${p.id}">
     <div class="avatar">${p.kind === 'checkin' ? I.flag : avatarHTML()}</div>
     <div class="post-main">
-      <div class="post-head"><span class="name">${esc(settings.name)}</span><span>@${esc(settings.handle)}</span><span>·</span>${time}<span class="wx" data-wx-for="${p.id}">${wxText(p.weather)}</span></div>
+      <div class="post-head"><span class="name">${esc(settings.name)}</span><span>@${esc(settings.handle)}</span>${noTime && !inThread ? '' : `<span>·</span>${time}`}<span class="wx" data-wx-for="${p.id}">${wxText(p.weather)}</span></div>
       ${ctx}${text}${media}${quoteHTML(p)}${loc}
       <div class="post-actions">
         <button class="icon-btn" data-action="reply" title="続きを書く（返信）">${I.reply}<span class="n">${!inThread && nReplies ? nReplies : ''}</span></button>
@@ -620,36 +620,6 @@ async function celebrate(post) {
   }
 }
 
-// 書き出しのきっかけ
-const PROMPTS = [
-  { key: 'free', label: 'ひとこと', starter: '' },
-  { key: 'good', label: 'よかったこと', starter: 'よかったこと：' },
-  { key: 'food', label: '食べたもの', starter: '食べたもの：' },
-  { key: 'people', label: '会った人', starter: '会った人：' },
-  { key: 'seen', label: '見たもの・読んだもの', starter: '見たもの：' },
-  { key: 'photo', label: '写真', photo: true },
-  { key: 'checkin', label: 'チェックイン', checkin: true },
-];
-
-async function quickCheckin() {
-  toast('現在地を取得中…');
-  try {
-    const post = await createPost({ text: '', withLoc: true, kind: 'checkin' });
-    await celebrate(post);
-    router();
-  } catch (e) {
-    toast(e.message);
-  }
-}
-
-function bindPrompts(root, day) {
-  root.querySelectorAll('[data-prompt]').forEach((b) => b.addEventListener('click', () => {
-    const pr = PROMPTS.find((x) => x.key === b.dataset.prompt);
-    if (pr.checkin) quickCheckin();
-    else openComposer({ day, starter: pr.starter, pickPhoto: !!pr.photo });
-  }));
-}
-
 /* ---------- ポスト操作（イベント委譲） ---------- */
 view.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-action]');
@@ -963,9 +933,12 @@ function dayLabel(key) {
 
 async function renderHome(query, alive, searchMode = false) {
   const today = dayKey();
-  const [posts, todayRec] = await Promise.all([db.allPosts(), db.getDay(today)]);
+  const [posts, todayRec, dayRecs] = await Promise.all([db.allPosts(), db.getDay(today), db.allDays()]);
   if (!alive()) return;
   posts.sort((a, b) => b.createdAt - a.createdAt);
+  const moodByDay = new Map(dayRecs.filter((r) => r.mood).map((r) => [r.date, r.mood]));
+  const countByDay = new Map();
+  for (const p of posts) countByDay.set(p.day, (countByDay.get(p.day) || 0) + 1);
   indexPosts(posts);
   const st = streakOf(posts);
 
@@ -996,7 +969,6 @@ async function renderHome(query, alive, searchMode = false) {
         <span class="avatar">${avatarHTML()}</span>
         <span class="tc-q">${todays.length ? 'ほかにはどんなことが？' : '今日はどんな日？'}</span>
       </button>
-      <div class="tc-chips">${PROMPTS.map((p) => `<button type="button" class="chip" data-prompt="${p.key}">${p.photo ? I.photo : p.checkin ? I.flag : ''}${p.label}</button>`).join('')}</div>
       <div class="tc-mood">
         <span class="mood-q">今日の気分</span>
         <div class="moods compact">${moodButtonsHTML(todayRec?.mood ?? null)}</div>
@@ -1008,7 +980,6 @@ async function renderHome(query, alive, searchMode = false) {
   if (!searchMode) {
     view.querySelector('.tc-prompt').addEventListener('click', () => openComposer());
     view.querySelector('.fab').addEventListener('click', () => openComposer());
-    bindPrompts(view, today);
     bindMoodButtons(view.querySelector('.tc-mood'), today, (v) => {
       if (v) toast(`今日の気分を「${moodOf(v).label}」で記録しました`);
     });
@@ -1045,7 +1016,12 @@ async function renderHome(query, alive, searchMode = false) {
       for (const p of chunk) {
         // 日付ごとに見出しを入れて、日記として読めるように
         const dk = needle ? p.day : dayKey(new Date(lastActivity(p)));
-        if (dk !== lastDay) { html += `<h3 class="feed-day">${dayLabel(dk)}</h3>`; lastDay = dk; }
+        if (dk !== lastDay) {
+          const mood = moodOf(moodByDay.get(dk));
+          html += `<a class="feed-day" href="#/day/${dk}"><span>${dayLabel(dk)}</span>
+            <span class="fd-meta">${mood ? `<span class="fd-mood" title="${mood.label}">${mood.e}</span>` : ''}${countByDay.get(dk) || 0}件</span></a>`;
+          lastDay = dk;
+        }
         html += needle ? postHTML(p, { context: true }) : threadHTML(p);
       }
       feed.insertAdjacentHTML('beforeend', html);
@@ -1092,6 +1068,13 @@ async function renderDay(day, alive) {
   const past = all.filter((p) => p.day.slice(5) === md && p.day < day).sort((a, b) => b.createdAt - a.createdAt);
   const located = posts.filter((p) => p.loc);
   const d = parseDay(day);
+  const placeCount = new Set(located.map((p) => p.loc.name || `${p.loc.lat.toFixed(3)},${p.loc.lng.toFixed(3)}`)).size;
+  const km = trailKm(located);
+  const daySum = posts.length ? `<div class="day-sum">
+      <span>${I.compose}${posts.length}件の記録</span>
+      ${placeCount ? `<span>${I.pin}${placeCount}か所</span>` : ''}
+      ${km >= 0.1 ? `<span>移動 約${fmtKm(km)}km</span>` : ''}
+    </div>` : '';
 
   view.innerHTML = `
     <div class="day-head">
@@ -1102,6 +1085,7 @@ async function renderDay(day, alive) {
           <div class="big">${d.getMonth() + 1}<b>/</b>${d.getDate()}</div>
           <div class="small">${weekday(day)}曜日${day === today ? '<span class="today-badge">今日</span>' : ''}</div>
           ${dayWx ? `<div class="day-wx">${dayWx}</div>` : ''}
+          ${daySum}
           <input type="date" value="${day}" aria-label="日付を選ぶ">
         </div>
         <a class="icon-btn" href="#/day/${addDays(day, 1)}" aria-label="次の日">${I.right}</a>
@@ -1114,9 +1098,13 @@ async function renderDay(day, alive) {
 
     <h2 class="section-title">できごと</h2>
     <button type="button" class="add-row">${I.compose}<span>${day === today ? '今日' : 'この日'}のできごとを書く</span></button>
-    <div class="diary">${diaryItems.map((p) => (isRoot(p)
-    ? threadHTML(p, { diary: true, pageDay: day })
-    : postHTML(p, { diary: true, pageDay: day, context: true }))).join('') || ''}</div>
+    <div class="timeline">${diaryItems.map((p) => `
+      <div class="tl-item">
+        <div class="tl-time">${p.day === day ? fmtTime(p.createdAt) : `${fmtDate(p.createdAt)}<br>${fmtTime(p.createdAt)}`}</div>
+        <div class="tl-body">${isRoot(p)
+    ? threadHTML(p, { diary: true, pageDay: day, noTime: true })
+    : postHTML(p, { diary: true, pageDay: day, context: true, noTime: true })}</div>
+      </div>`).join('')}</div>
 
     <h2 class="section-title">足あと
       <label class="btn small secondary title-btn">${I.photo}写真から追加<input type="file" id="photo-trail" accept="image/*" multiple hidden></label></h2>
@@ -1265,7 +1253,103 @@ async function renderCalendar(ym, alive) {
       <div class="stat-tile"><div class="label">最長記録</div><div class="value">${st.best}<span class="unit">日</span></div></div>
       <div class="stat-tile"><div class="label">今月の気分</div><div class="value">${monthMood(moods, ym)}</div></div>
     </div>
-    <div class="legend"><span><i></i>ポスト</span><span><i class="loc"></i>位置つき</span></div>`;
+    <div class="legend"><span><i></i>ポスト</span><span><i class="loc"></i>位置つき</span></div>
+    <h2 class="section-title">ふりかえり</h2>
+    ${chartsHTML(ym, byDay, moods)}`;
+  bindCharts(view);
+}
+
+/* ================= グラフ ================= */
+// 1系列ずつのシンプルなグラフ（凡例なし・タップで値を表示・表でも見られる）
+function chartsHTML(ym, byDay, moods) {
+  const [y, m] = ym.split('-').map(Number);
+  const n = new Date(y, m, 0).getDate();
+  const W = 340; const H = 150; const pl = 30; const pr = 8; const pt = 12; const pb = 24;
+  const cw = W - pl - pr; const ch = H - pt - pb; const step = cw / n;
+  const cx = (dd) => pl + (dd - 0.5) * step;
+  const keyOf = (dd) => `${ym}-${String(dd).padStart(2, '0')}`;
+  const label = (dd) => `${m}月${dd}日`;
+  const xAxis = [...new Set([1, 10, 20, n])].map((dd) => `<text x="${cx(dd)}" y="${H - 6}" class="ax" text-anchor="middle">${dd}</text>`).join('');
+  const base = pt + ch;
+
+  // 気分の推移（線＋点。記録のない日は線を切る）
+  const my = (v) => pt + ((5 - v) / 4) * ch;
+  let path = '';
+  let pen = false;
+  const pts = [];
+  for (let dd = 1; dd <= n; dd++) {
+    const v = moods.get(keyOf(dd));
+    if (!v) { pen = false; continue; }
+    path += `${pen ? 'L' : 'M'}${cx(dd).toFixed(1)},${my(v).toFixed(1)}`;
+    pen = true;
+    pts.push([dd, v]);
+  }
+  const moodSvg = pts.length ? `
+    <svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="${m}月の気分の推移">
+      ${[5, 4, 3, 2, 1].map((v) => `<line x1="${pl}" x2="${W - pr}" y1="${my(v)}" y2="${my(v)}" class="grid"/>`).join('')}
+      ${[5, 3, 1].map((v) => `<text x="${pl - 8}" y="${my(v) + 5}" class="ax emo" text-anchor="end">${moodOf(v).e}</text>`).join('')}
+      ${xAxis}
+      <path d="${path}" class="line"/>
+      ${pts.map(([dd, v]) => `<circle cx="${cx(dd)}" cy="${my(v)}" r="4.5" class="mk"/>`).join('')}
+      ${pts.map(([dd, v]) => `<circle cx="${cx(dd)}" cy="${my(v)}" r="14" class="hit" data-x="${cx(dd)}" data-day="${keyOf(dd)}" data-tip="${label(dd)}　${moodOf(v).e} ${moodOf(v).label}"/>`).join('')}
+    </svg>` : '<p class="chart-empty">この月はまだ気分の記録がありません</p>';
+
+  // 毎日の記録数（棒。上の角だけ丸く、日と日の間に2pxのすき間）
+  const counts = Array.from({ length: n }, (_, i) => byDay.get(keyOf(i + 1))?.n || 0);
+  const max = Math.max(1, ...counts);
+  const by = (c) => base - (c / max) * ch;
+  const bw = Math.max(2, step - 2);
+  const bar = (dd, c) => {
+    const x = cx(dd) - bw / 2; const top = by(c); const h = base - top; const r = Math.min(4, bw / 2, h);
+    return `M${x},${base}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${base}Z`;
+  };
+  const countSvg = counts.some(Boolean) ? `
+    <svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="${m}月の毎日の記録数">
+      <line x1="${pl}" x2="${W - pr}" y1="${by(max)}" y2="${by(max)}" class="grid"/>
+      <line x1="${pl}" x2="${W - pr}" y1="${base}" y2="${base}" class="grid base"/>
+      <text x="${pl - 8}" y="${by(max) + 4}" class="ax" text-anchor="end">${max}</text>
+      <text x="${pl - 8}" y="${base + 4}" class="ax" text-anchor="end">0</text>
+      ${xAxis}
+      ${counts.map((c, i) => (c ? `<path d="${bar(i + 1, c)}" class="bar"/>` : '')).join('')}
+      ${counts.map((c, i) => (c ? `<rect x="${cx(i + 1) - step / 2}" y="${pt}" width="${step}" height="${ch}" class="hit" data-x="${cx(i + 1)}" data-day="${keyOf(i + 1)}" data-tip="${label(i + 1)}　${c}件"/>` : '')).join('')}
+    </svg>` : '<p class="chart-empty">この月はまだ記録がありません</p>';
+
+  const moodRows = pts.map(([dd, v]) => `<tr><td>${label(dd)}</td><td>${moodOf(v).e} ${moodOf(v).label}</td></tr>`).join('');
+  const countRows = counts.map((c, i) => (c ? `<tr><td>${label(i + 1)}</td><td>${c}件</td></tr>` : '')).join('');
+  return `
+    <div class="chart-card">
+      <div class="chart-title">気分の推移</div>
+      <div class="chart-wrap">${moodSvg}<div class="chart-tip" hidden></div></div>
+      ${moodRows ? `<details class="chart-table"><summary>表で見る</summary><table>${moodRows}</table></details>` : ''}
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">毎日の記録数</div>
+      <div class="chart-wrap">${countSvg}<div class="chart-tip" hidden></div></div>
+      ${countRows ? `<details class="chart-table"><summary>表で見る</summary><table>${countRows}</table></details>` : ''}
+    </div>`;
+}
+
+// グラフの点や棒にさわると、その日の値を出す（タップで日記帳へのリンクも）
+function bindCharts(root) {
+  root.querySelectorAll('.chart-wrap').forEach((wrap) => {
+    const tip = wrap.querySelector('.chart-tip');
+    const svg = wrap.querySelector('svg');
+    if (!svg) return;
+    const show = (t) => {
+      const sx = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+      tip.innerHTML = `${esc(t.dataset.tip)}<a href="#/day/${t.dataset.day}">開く</a>`;
+      tip.hidden = false;
+      const left = Math.min(Math.max(Number(t.dataset.x) * sx, 70), wrap.clientWidth - 70);
+      tip.style.left = `${left}px`;
+      svg.querySelectorAll('.hit.on').forEach((x) => x.classList.remove('on'));
+      t.classList.add('on');
+    };
+    svg.querySelectorAll('.hit').forEach((t) => {
+      t.addEventListener('pointerenter', () => show(t));
+      t.addEventListener('click', () => show(t));
+    });
+    wrap.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') tip.hidden = true; });
+  });
 }
 
 // その月でいちばん多かった気分
@@ -1329,7 +1413,6 @@ async function renderSettings(alive) {
         <summary>つぶやく</summary>
         <ul>
           <li><b>ホーム</b>の「今日はどんな日？」か、右下の<b>ペンのボタン</b>で書く画面が開きます。</li>
-          <li>何を書くか迷ったら、「よかったこと」「食べたもの」などのボタンから書き始められます。</li>
           <li>🖼 で写真を4枚までつけられます。</li>
           <li>位置ボタンが青いときは、いまいる場所も一緒に記録されます。タップでオン／オフ。</li>
           <li><code>#おでかけ</code> のように書くとタグになり、タップすると同じタグの投稿が出てきます。</li>
@@ -1420,7 +1503,7 @@ async function renderSettings(alive) {
 
     <h2 class="section-title">その他</h2>
     <div class="group"><div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div></div>
-    <p class="section-sub" style="padding-top:12px">Daylog v1.7</p>
+    <p class="section-sub" style="padding-top:12px">Daylog v1.8</p>
   </div>`;
 
   const bindText = (id, key) => $(id).addEventListener('change', (e) => {

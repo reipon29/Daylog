@@ -5,23 +5,28 @@
    ・すりガラス（iOS 26 の Liquid Glass）はタブバー・上部バー・シートだけ
    ===================================================================== */
 :root {
-  --bg: #f2f2f7;               /* systemGroupedBackground */
-  --card: #ffffff;             /* secondarySystemGroupedBackground */
-  --fill: rgba(118, 118, 128, .12);   /* tertiarySystemFill */
-  --fill-2: rgba(120, 120, 128, .2);  /* systemFill */
-  --text: #000000;
-  --muted: rgba(60, 60, 67, .6);      /* secondaryLabel */
-  --faint: rgba(60, 60, 67, .3);      /* tertiaryLabel */
-  --sep: rgba(60, 60, 67, .29);       /* separator */
-  --accent: #007aff;           /* systemBlue */
-  --accent-soft: rgba(0, 122, 255, .12);
-  --green: #34c759;
-  --red: #ff3b30;
-  --orange: #ff9500;
-  --pink: #ff2d55;
-  --material: rgba(249, 249, 249, .78);   /* すりガラス */
-  --material-edge: rgba(255, 255, 255, .6);
-  --radius: 22px;
+  /* 空と雲：水色と白、ほんのりピンク */
+  --bg: #eaf6ff;
+  --card: #ffffff;
+  --fill: rgba(90, 170, 230, .12);
+  --fill-2: rgba(90, 170, 230, .22);
+  --text: #2c4466;
+  --muted: rgba(44, 68, 102, .58);
+  --faint: rgba(44, 68, 102, .3);
+  --sep: rgba(110, 165, 215, .28);
+  --accent: #3a9de0;
+  --accent-soft: rgba(58, 157, 224, .13);
+  --green: #4cc79a;
+  --red: #ff6b7d;
+  --orange: #ffa94d;
+  --pink: #ff8fb1;
+  --cheek: #ffd3e0;
+  --chart: #2a8bd2;
+  --shadow: 0 6px 22px rgba(90, 160, 220, .16), 0 1px 3px rgba(60, 110, 160, .06);
+  --material: rgba(255, 255, 255, .78);
+  --material-edge: rgba(255, 255, 255, .9);
+  --cloud: #ffffff;
+  --radius: 26px;
   --tabbar-h: 62px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
@@ -29,22 +34,27 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #000000;
-    --card: #1c1c1e;
-    --fill: rgba(118, 118, 128, .24);
-    --fill-2: rgba(120, 120, 128, .36);
-    --text: #ffffff;
-    --muted: rgba(235, 235, 245, .6);
-    --faint: rgba(235, 235, 245, .3);
-    --sep: rgba(84, 84, 88, .65);
-    --accent: #0a84ff;
-    --accent-soft: rgba(10, 132, 255, .2);
-    --green: #30d158;
-    --red: #ff453a;
-    --orange: #ff9f0a;
-    --pink: #ff375f;
-    --material: rgba(37, 37, 37, .72);
-    --material-edge: rgba(255, 255, 255, .12);
+    /* 夜空 */
+    --bg: #0e1a2e;
+    --card: #17284a;
+    --fill: rgba(120, 180, 240, .14);
+    --fill-2: rgba(120, 180, 240, .24);
+    --text: #eaf4ff;
+    --muted: rgba(220, 235, 255, .62);
+    --faint: rgba(220, 235, 255, .32);
+    --sep: rgba(140, 180, 230, .22);
+    --accent: #6cc0f5;
+    --accent-soft: rgba(108, 192, 245, .16);
+    --green: #5fd8a8;
+    --red: #ff7b8c;
+    --orange: #ffb35c;
+    --pink: #ff9dbc;
+    --cheek: rgba(255, 157, 188, .3);
+    --chart: #3a9ade;
+    --shadow: 0 8px 26px rgba(0, 0, 0, .3);
+    --material: rgba(23, 40, 74, .74);
+    --material-edge: rgba(255, 255, 255, .1);
+    --cloud: rgba(180, 210, 255, .08);
     color-scheme: dark;
   }
 }
@@ -510,3 +520,94 @@ body.sheet-open { overflow: hidden; }
 .sheet-composer .composer-tools { padding: 6px 10px; margin: 0; padding-bottom: max(6px, var(--safe-b)); }
 .sheet-composer .composer-tools .icon-btn { padding: 10px; }
 .sheet-composer .composer-tools svg { width: 24px; height: 24px; }
+
+/* =====================================================================
+   空と雲のデザイン
+   ===================================================================== */
+/* 背景：上のほうに、ふわふわの雲がうかぶ空 */
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: 420px; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(60px 34px at 12% 90px, var(--cloud) 98%, transparent),
+    radial-gradient(44px 30px at 20% 74px, var(--cloud) 98%, transparent),
+    radial-gradient(52px 28px at 27% 96px, var(--cloud) 98%, transparent),
+    radial-gradient(70px 36px at 78% 170px, var(--cloud) 98%, transparent),
+    radial-gradient(48px 32px at 86% 150px, var(--cloud) 98%, transparent),
+    radial-gradient(58px 30px at 93% 176px, var(--cloud) 98%, transparent),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 22%, var(--bg)), var(--bg));
+  opacity: .9;
+}
+
+/* カードはやわらかい影で、空にうかぶように */
+.composer, .post, .thread, .group, .cal, .places, .notice, .mood-card, .day-head, .today-card, .add-row, .stat-tile, .chart-card { box-shadow: var(--shadow); }
+.thread > .post { box-shadow: none; }
+.topbar { background: color-mix(in srgb, var(--material) 92%, transparent); border-bottom: 0; box-shadow: 0 1px 0 var(--sep); }
+.topbar h1 { color: var(--text); }
+.tabbar { box-shadow: inset 0 0 0 .5px var(--material-edge), 0 10px 30px rgba(70, 140, 210, .2); }
+.tabbar a { color: var(--muted); }
+.tabbar a.active { color: var(--accent); background: var(--accent-soft); }
+
+/* アイコンの丸は水色に、白い人型 */
+.avatar { background: color-mix(in srgb, var(--accent) 45%, #fff); }
+.post.checkin .avatar { background: var(--green); }
+
+/* 「今日」のカード：右上に小さな雲 */
+.today-card { position: relative; overflow: hidden; }
+.tc-prompt { background: var(--accent-soft); }
+.tc-q { color: var(--accent); }
+.tc-count { font-weight: 400; }
+.fab { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 75%, #fff), var(--accent)); box-shadow: 0 8px 20px rgba(58, 157, 224, .4), inset 0 1px 0 rgba(255, 255, 255, .5); }
+
+/* ハートと今日の印はほんのりピンク */
+.icon-btn.liked { color: var(--pink); }
+.cal a.today .d { background: var(--pink); }
+.day-head .date .today-badge { color: var(--pink); }
+.streak { background: var(--cheek); color: color-mix(in srgb, var(--pink) 80%, #c0306a); }
+.streak.pending { background: var(--fill); color: var(--muted); }
+
+/* ホームの日付の見出し（タップでその日の日記帳へ） */
+.feed-day { display: flex; align-items: baseline; justify-content: space-between; color: var(--text); padding-right: 22px; }
+.fd-meta { font-size: 14px; font-weight: 500; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.fd-mood { font-size: 18px; }
+
+/* 日記帳：1日のまとめ */
+.day-sum { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.day-sum span { display: inline-flex; align-items: center; gap: 4px; }
+.day-sum svg { width: 15px; height: 15px; }
+
+/* 日記帳：時刻のタイムライン（左に時刻、線でつながる） */
+.timeline { position: relative; margin: 0 16px 0 6px; }
+.timeline::before { content: ""; position: absolute; left: 58px; top: 10px; bottom: 10px; width: 2px; border-radius: 1px; background: var(--fill-2); }
+.tl-item { display: grid; grid-template-columns: 52px 1fr; align-items: start; }
+.tl-time { position: relative; text-align: right; padding: 15px 2px 0 0; font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; line-height: 1.3; }
+.tl-time::after { content: ""; position: absolute; left: calc(100% + 2px); top: 18px; width: 10px; height: 10px; border-radius: 50%; background: var(--card); border: 2.5px solid var(--accent); box-sizing: border-box; }
+.tl-body { min-width: 0; padding-left: 18px; }
+.tl-body > .post, .tl-body > .thread { margin: 0 0 12px; }
+
+/* ---------- グラフ ---------- */
+.chart-card { margin: 0 16px 12px; padding: 14px 12px 10px; background: var(--card); border-radius: var(--radius); }
+.chart-title { font-size: 15px; font-weight: 700; padding: 0 4px 6px; }
+.chart-wrap { position: relative; }
+.chart { width: 100%; height: auto; display: block; overflow: visible; fill: none; stroke: none; }
+.chart text { stroke: none; }
+.chart .grid { stroke: var(--sep); stroke-width: 1; }
+.chart .grid.base { stroke: var(--faint); }
+.chart .ax { fill: var(--muted); font-size: 11px; font-family: inherit; }
+.chart .ax.emo { font-size: 13px; }
+.chart .line { fill: none; stroke: var(--chart); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .mk { fill: var(--chart); stroke: var(--card); stroke-width: 2; }
+.chart .bar { fill: var(--chart); }
+.chart .hit { fill: transparent; cursor: pointer; }
+.chart rect.hit.on { fill: var(--fill); }
+.chart circle.hit.on { fill: var(--accent-soft); }
+.chart-tip {
+  position: absolute; top: -6px; transform: translate(-50%, -100%); white-space: nowrap; pointer-events: auto;
+  background: var(--text); color: var(--card); font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 10px; box-shadow: var(--shadow);
+}
+.chart-tip a { color: var(--card); opacity: .8; margin-left: 8px; text-decoration: underline; }
+.chart-empty { text-align: center; color: var(--muted); font-size: 14px; padding: 24px 0; margin: 0; }
+.chart-table { font-size: 13px; color: var(--muted); padding: 4px 4px 0; }
+.chart-table summary { cursor: pointer; color: var(--accent); }
+.chart-table table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.chart-table td { padding: 4px 2px; border-top: .5px solid var(--sep); }
+.chart-table td:last-child { text-align: right; color: var(--text); }

@@ -93,6 +93,8 @@ const I = {
   reply: '<svg viewBox="0 0 24 24"><path d="M4 12a8 7 0 0 1 8-7h0a8 7 0 0 1 0 14H9l-5 3 1.5-4.5A6.8 6.8 0 0 1 4 12z"/></svg>',
   quote: '<svg viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3M18 7v5M6 17v-5"/></svg>',
   flame: '<svg viewBox="0 0 24 24"><path d="M12 22c4 0 7-2.8 7-6.8 0-3.4-2.2-5.6-3.6-7.6-.4 1.7-1.4 2.9-2.6 3.4.3-3.2-.9-6.3-3.8-8C9.3 6 5 8.6 5 15.2 5 19.2 8 22 12 22z"/></svg>',
+  compose: '<svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
   more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>',
   left: '<svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></svg>',
   right: '<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>',
@@ -227,7 +229,7 @@ async function router() {
       case 'calendar': await renderCalendar(arg, alive); break;
       case 'map': await renderMap(arg, alive); break;
       case 'settings': await renderSettings(alive); break;
-      case 'search': await renderHome('#' + decodeURIComponent(arg), alive); break;
+      case 'search': await renderHome(arg ? `#${decodeURIComponent(arg)}` : '', alive, true); break;
       default: await renderHome('', alive);
     }
   } catch (e) {
@@ -237,6 +239,8 @@ async function router() {
 }
 
 /* ================= ポスト ================= */
+let freshId = null; // 書いたばかりの投稿（表示のときにふわっと出す）
+
 // 引用・返信を表示するための索引（各画面で全ポストを読み込んだときに更新）
 let postIndex = new Map();
 let replyIndex = new Map(); // 元ポストID → 返信の配列（古い順）
@@ -294,7 +298,7 @@ function postHTML(p, { diary = false, pageDay = null, inThread = false, context 
     ? `<a class="reply-ctx" href="#/day/${parent.day}">↪ ${fmtDate(parent.createdAt)}「${esc(snippet(parent.text, 24)) || '投稿'}」への返信</a>` : '';
   const nReplies = (replyIndex.get(p.id) || []).length;
   return `
-  <article class="post ${p.kind === 'checkin' ? 'checkin' : ''} ${inThread ? 'in-thread' : ''}" data-id="${p.id}">
+  <article class="post ${p.kind === 'checkin' ? 'checkin' : ''} ${inThread ? 'in-thread' : ''} ${p.id === freshId ? 'fresh' : ''}" data-id="${p.id}">
     <div class="avatar">${p.kind === 'checkin' ? I.flag : avatarHTML()}</div>
     <div class="post-main">
       <div class="post-head"><span class="name">${esc(settings.name)}</span><span>@${esc(settings.handle)}</span><span>·</span>${time}<span class="wx" data-wx-for="${p.id}">${wxText(p.weather)}</span></div>
@@ -495,7 +499,7 @@ function bindComposer(form, { day, onPosted, draftKey, replyTo, quoteOf }) {
     const withLoc = kind === 'checkin' || (locOn && !m);
     if (withLoc) toast('現在地を取得中…');
     try {
-      await createPost({
+      const post = await createPost({
         text: ta.value.trim(), photos: photos.map((p) => p.blob), withLoc, day, kind,
         at: m?.time, presetLoc: m?.loc, takenAt: m ? photoKey(m) : undefined, replyTo, quoteOf,
       });
@@ -505,7 +509,7 @@ function bindComposer(form, { day, onPosted, draftKey, replyTo, quoteOf }) {
       usePhotoMeta = true;
       renderThumbs();
       toast(kind === 'checkin' ? 'チェックインしました' : replyTo ? '返信しました' : 'ポストしました');
-      onPosted?.();
+      onPosted?.(post);
     } catch (e) {
       toast(e.message);
     } finally {
@@ -516,6 +520,134 @@ function bindComposer(form, { day, onPosted, draftKey, replyTo, quoteOf }) {
   form.addEventListener('submit', (e) => { e.preventDefault(); send('post'); });
   checkinBtn?.addEventListener('click', () => send('checkin'));
   refresh();
+}
+
+/* ---------- 全画面の「書く」シート ---------- */
+// day: どの日の日記として書くか / starter: 書き出しの言葉 / pickPhoto: 開いてすぐ写真を選ぶ
+function openComposer({ day = dayKey(), starter = '', pickPhoto = false } = {}) {
+  if ($('#compose')) return;
+  const past = day !== dayKey();
+  const el = document.createElement('div');
+  el.id = 'compose';
+  el.innerHTML = `
+    <form class="composer sheet-composer" autocomplete="off">
+      <div class="cs-head">
+        <button type="button" class="cs-cancel">キャンセル</button>
+        <span class="cs-title">${past ? `${fmtDate(parseDay(day).getTime())}の日記` : ''}</span>
+        <button class="btn" type="submit" disabled>ポスト</button>
+      </div>
+      <div class="cs-body">
+        <div class="avatar">${avatarHTML()}</div>
+        <div class="composer-body">
+          <textarea name="text" placeholder="${past ? 'この日のできごとは？' : 'いまどうしてる？'}"></textarea>
+          <div class="thumbs"></div>
+          <div class="photo-meta" hidden></div>
+        </div>
+      </div>
+      <div class="composer-tools">
+        <label class="icon-btn" title="写真を追加">${I.photo}<input type="file" accept="image/*" multiple hidden></label>
+        <button type="button" class="icon-btn loc-toggle" title="位置情報をつける" aria-label="位置情報をつける">${I.pin}</button>
+        ${past ? '' : `<button type="button" class="icon-btn checkin" title="いまいる場所を記録">${I.flag}<span>チェックイン</span></button>`}
+        <span class="spacer"></span>
+        <span class="count"></span>
+      </div>
+    </form>`;
+  document.body.appendChild(el);
+  document.body.classList.add('sheet-open');
+  const form = el.querySelector('form');
+  const ta = form.querySelector('textarea');
+
+  // キーボードが出ても、ツールバーがキーボードのすぐ上に来るように
+  const vv = window.visualViewport;
+  const fit = () => {
+    if (!vv) return;
+    el.style.height = `${vv.height}px`;
+    el.style.transform = `translateY(${vv.offsetTop}px)`;
+  };
+  vv?.addEventListener('resize', fit);
+  vv?.addEventListener('scroll', fit);
+  fit();
+
+  const close = () => {
+    vv?.removeEventListener('resize', fit);
+    vv?.removeEventListener('scroll', fit);
+    document.removeEventListener('keydown', onKey);
+    if (ta.value.trim()) toast('下書きを保存しました');
+    el.classList.add('closing');
+    document.body.classList.remove('sheet-open');
+    setTimeout(() => el.remove(), 220);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  el.querySelector('.cs-cancel').addEventListener('click', close);
+  el.addEventListener('click', (e) => { if (e.target === el) close(); });
+
+  bindComposer(form, {
+    day,
+    draftKey: past ? `day:${day}` : 'home',
+    onPosted: async (post) => {
+      ta.value = '';
+      close();
+      await celebrate(post);
+      router();
+    },
+  });
+  if (starter) {
+    ta.value = ta.value.trim() ? `${ta.value}\n${starter}` : starter;
+    ta.dispatchEvent(new Event('input'));
+  }
+  // タップの流れの中で呼ぶと、iPhone でもすぐキーボード／写真選択が開く
+  if (pickPhoto) form.querySelector('input[type=file]').click();
+  else {
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  }
+}
+
+// 書いたあとの手応え：今日はじめての記録なら連続日数を伝える
+async function celebrate(post) {
+  freshId = post?.id || null;
+  if (!post) return;
+  const all = await db.allPosts();
+  const st = streakOf(all);
+  const todays = all.filter((p) => p.day === dayKey()).length;
+  if (post.day === dayKey() && todays === 1) {
+    toast(st.current > 1 ? `今日の最初の記録です。${st.current}日連続！` : '今日の最初の記録です', 3200);
+  } else if (post.kind === 'checkin') {
+    toast('チェックインしました');
+  } else {
+    toast(`今日${todays}件目の記録です`);
+  }
+}
+
+// 書き出しのきっかけ
+const PROMPTS = [
+  { key: 'free', label: 'ひとこと', starter: '' },
+  { key: 'good', label: 'よかったこと', starter: 'よかったこと：' },
+  { key: 'food', label: '食べたもの', starter: '食べたもの：' },
+  { key: 'people', label: '会った人', starter: '会った人：' },
+  { key: 'seen', label: '見たもの・読んだもの', starter: '見たもの：' },
+  { key: 'photo', label: '写真', photo: true },
+  { key: 'checkin', label: 'チェックイン', checkin: true },
+];
+
+async function quickCheckin() {
+  toast('現在地を取得中…');
+  try {
+    const post = await createPost({ text: '', withLoc: true, kind: 'checkin' });
+    await celebrate(post);
+    router();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+function bindPrompts(root, day) {
+  root.querySelectorAll('[data-prompt]').forEach((b) => b.addEventListener('click', () => {
+    const pr = PROMPTS.find((x) => x.key === b.dataset.prompt);
+    if (pr.checkin) quickCheckin();
+    else openComposer({ day, starter: pr.starter, pickPhoto: !!pr.photo });
+  }));
 }
 
 /* ---------- ポスト操作（イベント委譲） ---------- */
@@ -820,58 +952,103 @@ function openDialog(html, cls = '') {
 /* ================= ホーム（タイムライン） ================= */
 const PAGE = 40;
 
-async function renderHome(query, alive) {
-  const [posts, todayRec] = await Promise.all([db.allPosts(), db.getDay(dayKey())]);
+// 日付の見出し：今日／昨日／11月18日（水）
+function dayLabel(key) {
+  if (key === dayKey()) return '今日';
+  if (key === addDays(dayKey(), -1)) return '昨日';
+  const d = parseDay(key);
+  const y = d.getFullYear() !== new Date().getFullYear() ? `${d.getFullYear()}年` : '';
+  return `${y}${d.getMonth() + 1}月${d.getDate()}日（${weekday(key)}）`;
+}
+
+async function renderHome(query, alive, searchMode = false) {
+  const today = dayKey();
+  const [posts, todayRec] = await Promise.all([db.allPosts(), db.getDay(today)]);
   if (!alive()) return;
   posts.sort((a, b) => b.createdAt - a.createdAt);
   indexPosts(posts);
   const st = streakOf(posts);
-  setChrome(query ? '検索' : 'ホーム', 'home', !query && st.current
-    ? `<button class="streak ${st.todayDone ? '' : 'pending'}" id="streak">${I.flame}${st.current}日</button>` : '');
-  $('#streak')?.addEventListener('click', () => toast(st.todayDone
-    ? `${st.current}日連続で記録中！（最長 ${st.best}日）`
-    : `今日書くと${st.current + 1}日連続！（最長 ${st.best}日）`, 3500));
 
-  view.innerHTML = `
-    ${query ? '' : backupNoticeHTML(posts)}
-    ${query || todayRec?.mood ? '' : `<div class="mood-card"><b>今日の気分は？</b><div class="moods">${moodButtonsHTML(null)}</div></div>`}
-    ${query ? '' : composerHTML()}
-    <div class="search"><input type="search" placeholder="キーワード・#タグ・場所で検索" value="${esc(query)}"></div>
-    <div id="feed"></div>`;
-  if (!query) bindComposer(view.querySelector('.composer'), { onPosted: router, draftKey: 'home' });
-  const moodCard = view.querySelector('.mood-card');
-  if (moodCard) {
-    bindMoodButtons(moodCard, dayKey(), (v) => {
-      if (!v) return;
-      toast(`今日の気分を「${moodOf(v).label}」で記録しました`);
-      moodCard.classList.add('done');
-      setTimeout(() => moodCard.remove(), 400);
-    });
+  if (searchMode) {
+    setChrome('検索', 'home', '<a class="btn small secondary" href="#/">閉じる</a>');
+  } else {
+    setChrome('ホーム', 'home', `
+      ${st.current ? `<button class="streak ${st.todayDone ? '' : 'pending'} ${freshId ? 'bump' : ''}" id="streak">${I.flame}${st.current}日</button>` : ''}
+      <a class="icon-btn round" href="#/search" aria-label="検索">${I.search}</a>`);
+    $('#streak')?.addEventListener('click', () => toast(st.todayDone
+      ? `${st.current}日連続で記録中！（最長 ${st.best}日）`
+      : `今日書くと${st.current + 1}日連続！（最長 ${st.best}日）`, 3500));
   }
-  view.querySelectorAll('[data-bk]').forEach((b) => b.addEventListener('click', async () => {
-    if (b.dataset.bk === 'now') {
-      await exportBackup();
-    } else {
-      settings.backupSnoozeUntil = Date.now() + 3 * 86400000;
-      saveSettings();
-      view.querySelector('.notice')?.remove();
-    }
-  }));
+
+  const todays = posts.filter((p) => p.day === today);
+  const wx = todays.find((p) => p.weather)?.weather;
+  const d = new Date();
+  view.innerHTML = searchMode ? `
+    <div class="search"><input type="search" placeholder="キーワード・#タグ・場所で検索" value="${esc(query)}"></div>
+    <div id="feed"></div>` : `
+    ${backupNoticeHTML(posts)}
+    <section class="today-card">
+      <div class="tc-top">
+        <div class="tc-date">${d.getMonth() + 1}月${d.getDate()}日 ${weekday(today)}曜日${todays.length ? `<span class="tc-count">・${todays.length}件の記録</span>` : ''}</div>
+        ${wx ? `<div class="tc-wx">${weatherInfo(wx.code).emoji} ${wx.temp}℃</div>` : ''}
+      </div>
+      <button type="button" class="tc-prompt">
+        <span class="avatar">${avatarHTML()}</span>
+        <span class="tc-q">${todays.length ? 'ほかにはどんなことが？' : '今日はどんな日？'}</span>
+      </button>
+      <div class="tc-chips">${PROMPTS.map((p) => `<button type="button" class="chip" data-prompt="${p.key}">${p.photo ? I.photo : p.checkin ? I.flag : ''}${p.label}</button>`).join('')}</div>
+      <div class="tc-mood">
+        <span class="mood-q">今日の気分</span>
+        <div class="moods compact">${moodButtonsHTML(todayRec?.mood ?? null)}</div>
+      </div>
+    </section>
+    <div id="feed"></div>
+    <button type="button" class="fab" aria-label="書く">${I.compose}</button>`;
+
+  if (!searchMode) {
+    view.querySelector('.tc-prompt').addEventListener('click', () => openComposer());
+    view.querySelector('.fab').addEventListener('click', () => openComposer());
+    bindPrompts(view, today);
+    bindMoodButtons(view.querySelector('.tc-mood'), today, (v) => {
+      if (v) toast(`今日の気分を「${moodOf(v).label}」で記録しました`);
+    });
+    view.querySelectorAll('[data-bk]').forEach((b) => b.addEventListener('click', async () => {
+      if (b.dataset.bk === 'now') {
+        await exportBackup();
+      } else {
+        settings.backupSnoozeUntil = Date.now() + 3 * 86400000;
+        saveSettings();
+        view.querySelector('.notice')?.remove();
+      }
+    }));
+  }
 
   const feed = $('#feed');
+  const lastActivity = (r) => Math.max(r.createdAt, ...(replyIndex.get(r.id) || []).map((x) => x.createdAt));
   const draw = (q) => {
     const needle = q.trim().toLowerCase();
+    if (searchMode && !needle) {
+      feed.innerHTML = '<p class="section-sub center">投稿の言葉・#タグ・場所の名前で探せます</p>';
+      return;
+    }
     // ふだんはスレッド単位（返信があると上に上がる）、検索中は一致したポストを1つずつ
-    const lastActivity = (r) => Math.max(r.createdAt, ...(replyIndex.get(r.id) || []).map((x) => x.createdAt));
     const list = needle
       ? posts.filter((p) => (p.text || '').toLowerCase().includes(needle) || (p.loc?.name || '').toLowerCase().includes(needle))
       : posts.filter(isRoot).sort((a, b) => lastActivity(b) - lastActivity(a));
     let shown = 0;
+    let lastDay = null;
     const more = () => {
       const chunk = list.slice(shown, shown + PAGE);
       shown += chunk.length;
       feed.querySelector('.more')?.remove();
-      feed.insertAdjacentHTML('beforeend', chunk.map((p) => (needle ? postHTML(p, { context: true }) : threadHTML(p))).join(''));
+      let html = '';
+      for (const p of chunk) {
+        // 日付ごとに見出しを入れて、日記として読めるように
+        const dk = needle ? p.day : dayKey(new Date(lastActivity(p)));
+        if (dk !== lastDay) { html += `<h3 class="feed-day">${dayLabel(dk)}</h3>`; lastDay = dk; }
+        html += needle ? postHTML(p, { context: true }) : threadHTML(p);
+      }
+      feed.insertAdjacentHTML('beforeend', html);
       hydratePhotos(feed);
       if (shown < list.length) {
         feed.insertAdjacentHTML('beforeend', '<div class="empty more"><button class="btn secondary">もっと見る</button></div>');
@@ -880,14 +1057,19 @@ async function renderHome(query, alive) {
     };
     feed.innerHTML = list.length ? '' : (needle
       ? '<div class="empty"><strong>見つかりませんでした</strong>別のキーワードで試してください</div>'
-      : '<div class="empty"><strong>ようこそ Daylog へ</strong>いまの気持ちや、行った場所をつぶやいてみましょう。</div>');
+      : '<p class="section-sub center first-hint">上の「今日はどんな日？」から、最初のひとことを書いてみましょう</p>');
     more();
+    freshId = null;
   };
-  let t;
-  view.querySelector('.search input').addEventListener('input', (e) => {
-    clearTimeout(t);
-    t = setTimeout(() => draw(e.target.value), 150);
-  });
+  if (searchMode) {
+    const input = view.querySelector('.search input');
+    let t;
+    input.addEventListener('input', (e) => {
+      clearTimeout(t);
+      t = setTimeout(() => draw(e.target.value), 150);
+    });
+    if (!query) input.focus();
+  }
   draw(query);
 }
 
@@ -931,10 +1113,10 @@ async function renderDay(day, alive) {
     </div>
 
     <h2 class="section-title">できごと</h2>
-    ${composerHTML({ day })}
+    <button type="button" class="add-row">${I.compose}<span>${day === today ? '今日' : 'この日'}のできごとを書く</span></button>
     <div class="diary">${diaryItems.map((p) => (isRoot(p)
     ? threadHTML(p, { diary: true, pageDay: day })
-    : postHTML(p, { diary: true, pageDay: day, context: true }))).join('') || '<p class="section-sub" style="padding-top:8px">まだ何も書かれていません</p>'}</div>
+    : postHTML(p, { diary: true, pageDay: day, context: true }))).join('') || ''}</div>
 
     <h2 class="section-title">足あと
       <label class="btn small secondary title-btn">${I.photo}写真から追加<input type="file" id="photo-trail" accept="image/*" multiple hidden></label></h2>
@@ -947,6 +1129,7 @@ async function renderDay(day, alive) {
       </ol>` : '<p class="section-sub">この日の足あとはまだありません。おでかけ先でチェックインするか、「写真から追加」で撮った写真を選ぶと、ここに地図ができます。</p>'}
 
     ${past.length ? `<h2 class="section-title">過去の${d.getMonth() + 1}月${d.getDate()}日</h2>${past.map((p) => postHTML(p, { context: true })).join('')}` : ''}
+    <button type="button" class="fab" aria-label="書く">${I.compose}</button>
   `;
 
   bindMoodButtons(view.querySelector('.mood-row'), day);
@@ -955,7 +1138,8 @@ async function renderDay(day, alive) {
   dateBox.addEventListener('click', () => { try { dateInput.showPicker(); } catch { dateInput.focus(); } });
   dateInput.addEventListener('change', () => { if (isDayKey(dateInput.value)) location.hash = `#/day/${dateInput.value}`; });
 
-  bindComposer(view.querySelector('.composer'), { day, onPosted: router, draftKey: `day:${day}` });
+  view.querySelector('.add-row').addEventListener('click', () => openComposer({ day }));
+  view.querySelector('.fab').addEventListener('click', () => openComposer({ day }));
   hydratePhotos(view);
   $('#photo-trail').addEventListener('change', async (e) => {
     const files = [...e.target.files];
@@ -1144,7 +1328,8 @@ async function renderSettings(alive) {
       <details class="howto">
         <summary>つぶやく</summary>
         <ul>
-          <li><b>ホーム</b>の「いまどうしてる？」に書いて<b>ポスト</b>。</li>
+          <li><b>ホーム</b>の「今日はどんな日？」か、右下の<b>ペンのボタン</b>で書く画面が開きます。</li>
+          <li>何を書くか迷ったら、「よかったこと」「食べたもの」などのボタンから書き始められます。</li>
           <li>🖼 で写真を4枚までつけられます。</li>
           <li>位置ボタンが青いときは、いまいる場所も一緒に記録されます。タップでオン／オフ。</li>
           <li><code>#おでかけ</code> のように書くとタグになり、タップすると同じタグの投稿が出てきます。</li>
@@ -1235,7 +1420,7 @@ async function renderSettings(alive) {
 
     <h2 class="section-title">その他</h2>
     <div class="group"><div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div></div>
-    <p class="section-sub" style="padding-top:12px">Daylog v1.6</p>
+    <p class="section-sub" style="padding-top:12px">Daylog v1.7</p>
   </div>`;
 
   const bindText = (id, key) => $(id).addEventListener('change', (e) => {

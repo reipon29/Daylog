@@ -398,7 +398,7 @@ dialog.sheet .menu { display: flex; flex-direction: column; background: transpar
 
 /* トースト（iOS の HUD 風） */
 #toast {
-  position: fixed; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-b) + 22px); transform: translateX(-50%) translateY(16px);
+  position: fixed; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-b) + 96px); transform: translateX(-50%) translateY(16px);
   background: rgba(30, 30, 30, .82); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 15px; font-weight: 500; z-index: 100;
   -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
   opacity: 0; pointer-events: none; transition: .25s; max-width: calc(100vw - 32px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -422,3 +422,91 @@ body.viewer-open { overflow: hidden; }
 
 /* 「2本の指で地図を動かせます」の案内（地図ライブラリの表示を iOS 風に） */
 .maplibregl-cooperative-gesture-screen { background: rgba(0, 0, 0, .45); color: #fff; font-size: 17px; font-weight: 600; padding: 0 24px; border-radius: var(--radius); }
+
+/* =====================================================================
+   書きたくなるホーム
+   ===================================================================== */
+/* 今日のカード */
+.today-card { margin: 0 16px 8px; padding: 16px 16px 12px; background: var(--card); border-radius: var(--radius); }
+.tc-top { display: flex; justify-content: space-between; align-items: baseline; }
+.tc-date { font-size: 15px; font-weight: 600; color: var(--muted); }
+.tc-wx { font-size: 15px; color: var(--muted); }
+.tc-prompt {
+  width: 100%; display: flex; align-items: center; gap: 12px; margin: 12px 0 14px; padding: 14px;
+  border: 0; border-radius: 16px; background: var(--fill); cursor: pointer; text-align: left;
+}
+.tc-prompt:active { transform: scale(.985); }
+.tc-prompt .avatar { width: 36px; height: 36px; }
+.tc-q { font-size: 18px; font-weight: 600; color: var(--muted); }
+.tc-chips { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 0 16px 2px; scrollbar-width: none; }
+.tc-chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; border: 0; cursor: pointer;
+  padding: 8px 14px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 15px; font-weight: 600;
+}
+.chip svg { width: 17px; height: 17px; stroke-width: 2; }
+.chip:active { opacity: .6; }
+.tc-mood { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: .5px solid var(--sep); }
+.moods.compact { margin: 0; gap: 0; }
+.moods.compact .mood-btn { min-width: 0; padding: 4px 6px; }
+.moods.compact .mood-btn .e { font-size: 24px; }
+.moods.compact .mood-btn .l { display: none; }
+
+/* 日付の見出し */
+.feed-day { font-size: 20px; font-weight: 700; margin: 0; padding: 18px 20px 8px; }
+.section-sub.center { text-align: center; padding: 24px 32px; }
+
+/* 右下の「書く」ボタン */
+.fab {
+  position: fixed; z-index: 25; right: max(20px, calc(50% - 300px)); bottom: calc(var(--tabbar-h) + var(--safe-b) + 22px);
+  width: 58px; height: 58px; border-radius: 50%; border: 0; cursor: pointer;
+  background: var(--accent); color: #fff; display: grid; place-items: center;
+  box-shadow: 0 6px 18px rgba(0, 122, 255, .35), 0 2px 4px rgba(0, 0, 0, .12);
+  transition: transform .15s;
+}
+.fab:active { transform: scale(.92); }
+.fab svg { width: 26px; height: 26px; stroke-width: 2; }
+body.sheet-open .fab { opacity: 0; }
+
+/* 日記帳の「書く」行 */
+.add-row {
+  display: flex; align-items: center; gap: 10px; width: calc(100% - 32px); margin: 0 16px 12px; padding: 14px 16px;
+  border: 0; border-radius: var(--radius); background: var(--card); color: var(--accent); font-size: 16px; font-weight: 600; cursor: pointer; text-align: left;
+}
+.add-row:active { background: var(--fill); }
+
+/* 上部の丸いアイコンボタン */
+.icon-btn.round { color: var(--accent); background: var(--fill); padding: 7px; }
+.icon-btn.round svg { width: 20px; height: 20px; stroke-width: 2.2; }
+
+/* 書いたあとの手応え */
+.post.fresh { animation: fresh .7s ease; }
+@keyframes fresh { from { opacity: 0; transform: translateY(-10px) scale(.98); box-shadow: 0 0 0 3px var(--accent-soft); } }
+.streak.bump { animation: bump .6s ease .2s; }
+@keyframes bump { 40% { transform: scale(1.25); } }
+
+/* ---------- 全画面の「書く」シート ---------- */
+body.sheet-open { overflow: hidden; }
+#compose {
+  position: fixed; top: 0; left: 0; right: 0; height: 100dvh; z-index: 150;
+  display: flex; flex-direction: column; background: rgba(0, 0, 0, .35);
+  animation: cs-fade .2s ease;
+}
+#compose.closing { opacity: 0; transition: opacity .2s; }
+#compose.closing .sheet-composer { transform: translateY(40px); transition: transform .2s; }
+@keyframes cs-fade { from { opacity: 0; } }
+.composer.sheet-composer {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0;
+  margin: calc(var(--safe-t) + 10px) 0 0; padding: 0; border-radius: 16px 16px 0 0;
+  max-width: 640px; width: 100%; align-self: center;
+  animation: cs-up .28s cubic-bezier(.2, .9, .3, 1);
+}
+@keyframes cs-up { from { transform: translateY(60%); } }
+.cs-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 6px 6px; }
+.cs-cancel { border: 0; background: transparent; color: var(--accent); font-size: 17px; padding: 8px 10px; cursor: pointer; }
+.cs-title { font-size: 15px; font-weight: 600; color: var(--muted); }
+.cs-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; gap: 12px; padding: 6px 16px 12px; }
+.sheet-composer textarea { font-size: 19px !important; line-height: 1.5; min-height: 30vh; padding-top: 6px; }
+.sheet-composer .composer-tools { padding: 6px 10px; margin: 0; padding-bottom: max(6px, var(--safe-b)); }
+.sheet-composer .composer-tools .icon-btn { padding: 10px; }
+.sheet-composer .composer-tools svg { width: 24px; height: 24px; }

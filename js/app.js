@@ -9,7 +9,7 @@ import {
 
 /* ================= 設定 ================= */
 const SETTINGS_KEY = 'daylog.settings';
-const DEFAULTS = { name: 'わたし', handle: 'me', avatarImage: '', autoLocation: true, geocode: true, weather: true };
+const DEFAULTS = { name: 'わたし', handle: 'me', avatarImage: '', autoLocation: true, geocode: true, weather: true, kcalGoal: 1800, weightGoal: '', height: '' };
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; }
   catch { return { ...DEFAULTS }; }
@@ -93,6 +93,10 @@ const I = {
   reply: '<svg viewBox="0 0 24 24"><path d="M4 12a8 7 0 0 1 8-7h0a8 7 0 0 1 0 14H9l-5 3 1.5-4.5A6.8 6.8 0 0 1 4 12z"/></svg>',
   quote: '<svg viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3M18 7v5M6 17v-5"/></svg>',
   flame: '<svg viewBox="0 0 24 24"><path d="M12 22c4 0 7-2.8 7-6.8 0-3.4-2.2-5.6-3.6-7.6-.4 1.7-1.4 2.9-2.6 3.4.3-3.2-.9-6.3-3.8-8C9.3 6 5 8.6 5 15.2 5 19.2 8 22 12 22z"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  meal: '<svg viewBox="0 0 24 24"><path d="M7 3v8M4 3v5a3 3 0 0 0 6 0V3M7 11v10M17 21V3c-2 1.5-3 4-3 7v3h3"/></svg>',
+  steps: '<svg viewBox="0 0 24 24"><path d="M8 3c2 0 3 2 3 5s-1 5-3 5-3-2-3-5 1-5 3-5zM6 15.5h4l-.5 3a1.8 1.8 0 0 1-3.5 0zM16 7c2 0 3 2 3 5s-1 5-3 5-3-2-3-5 1-5 3-5zM14 19.5h4l-.5 1.8a1.8 1.8 0 0 1-3.5 0z"/></svg>',
+  scale: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M8.5 9a5 5 0 0 1 7 0M12 9l1.5-2"/></svg>',
   compose: '<svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
   more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>',
@@ -228,6 +232,7 @@ async function router() {
       case 'day': await renderDay(isDayKey(arg) ? arg : dayKey(), alive); break;
       case 'calendar': await renderCalendar(arg, alive); break;
       case 'map': await renderMap(arg, alive); break;
+      case 'body': await renderBody(isDayKey(arg) ? arg : dayKey(), alive); break;
       case 'settings': await renderSettings(alive); break;
       case 'search': await renderHome(arg ? `#${decodeURIComponent(arg)}` : '', alive, true); break;
       default: await renderHome('', alive);
@@ -933,7 +938,8 @@ function dayLabel(key) {
 
 async function renderHome(query, alive, searchMode = false) {
   const today = dayKey();
-  const [posts, todayRec, dayRecs] = await Promise.all([db.allPosts(), db.getDay(today), db.allDays()]);
+  const [posts, todayRec, dayRecs, todayHealth] = await Promise.all([db.allPosts(), db.getDay(today), db.allDays(), db.getHealth(today)]);
+  const tb = bodyOf(todayRec, todayHealth);
   if (!alive()) return;
   posts.sort((a, b) => b.createdAt - a.createdAt);
   const moodByDay = new Map(dayRecs.filter((r) => r.mood).map((r) => [r.date, r.mood]));
@@ -969,6 +975,11 @@ async function renderHome(query, alive, searchMode = false) {
         <span class="avatar">${avatarHTML()}</span>
         <span class="tc-q">${todays.length ? 'ほかにはどんなことが？' : '今日はどんな日？'}</span>
       </button>
+      <a class="tc-body" href="#/body">
+        <span>${I.meal}${tb.kcal ? `${fmtNum(tb.kcal)}<small>kcal</small>` : '<em>食事</em>'}</span>
+        <span>${I.steps}${tb.steps != null ? `${fmtNum(tb.steps)}<small>歩</small>` : '<em>歩数</em>'}</span>
+        <span>${I.scale}${tb.weight != null ? `${fmtNum(tb.weight, 1)}<small>kg</small>` : '<em>体重</em>'}</span>
+      </a>
       <div class="tc-mood">
         <span class="mood-q">今日の気分</span>
         <div class="moods compact">${moodButtonsHTML(todayRec?.mood ?? null)}</div>
@@ -1053,7 +1064,8 @@ async function renderHome(query, alive, searchMode = false) {
 async function renderDay(day, alive) {
   const today = dayKey();
   setChrome('日記帳', 'day', day !== today ? '<a class="btn small secondary" href="#/day">今日</a>' : '');
-  const [posts, all, dayRec] = await Promise.all([db.postsByDay(day), db.allPosts(), db.getDay(day)]);
+  const [posts, all, dayRec, dayHealth] = await Promise.all([db.postsByDay(day), db.allPosts(), db.getDay(day), db.getHealth(day)]);
+  const body = bodyOf(dayRec, dayHealth);
   if (!alive()) return;
   posts.sort((a, b) => a.createdAt - b.createdAt);
   indexPosts(all);
@@ -1070,11 +1082,15 @@ async function renderDay(day, alive) {
   const d = parseDay(day);
   const placeCount = new Set(located.map((p) => p.loc.name || `${p.loc.lat.toFixed(3)},${p.loc.lng.toFixed(3)}`)).size;
   const km = trailKm(located);
-  const daySum = posts.length ? `<div class="day-sum">
-      <span>${I.compose}${posts.length}件の記録</span>
-      ${placeCount ? `<span>${I.pin}${placeCount}か所</span>` : ''}
-      ${km >= 0.1 ? `<span>移動 約${fmtKm(km)}km</span>` : ''}
-    </div>` : '';
+  const sumParts = [
+    posts.length && `<span>${I.compose}${posts.length}件の記録</span>`,
+    placeCount && `<span>${I.pin}${placeCount}か所</span>`,
+    km >= 0.1 && `<span>移動 約${fmtKm(km)}km</span>`,
+    body.kcal && `<span>${I.meal}${fmtNum(body.kcal)}kcal</span>`,
+    body.steps != null && `<span>${I.steps}${fmtNum(body.steps)}歩</span>`,
+    body.weight != null && `<span>${I.scale}${fmtNum(body.weight, 1)}kg</span>`,
+  ].filter(Boolean);
+  const daySum = sumParts.length ? `<div class="day-sum">${sumParts.join('')}</div>` : '';
 
   view.innerHTML = `
     <div class="day-head">
@@ -1106,7 +1122,7 @@ async function renderDay(day, alive) {
     : postHTML(p, { diary: true, pageDay: day, context: true, noTime: true })}</div>
       </div>`).join('')}</div>
 
-    <h2 class="section-title">足あと
+    <h2 class="section-title">足あと <a class="title-link" href="#/map">すべて</a>
       <label class="btn small secondary title-btn">${I.photo}写真から追加<input type="file" id="photo-trail" accept="image/*" multiple hidden></label></h2>
     ${located.length ? `
       <div class="map-wrap"><div id="daymap" class="map"></div>
@@ -1197,6 +1213,296 @@ async function drawDayMap(el, located) {
   }
 }
 
+/* ================= からだ（食事・カロリー・体重・歩数） ================= */
+const MEALS = [
+  { key: 'breakfast', label: '朝ごはん' },
+  { key: 'lunch', label: '昼ごはん' },
+  { key: 'dinner', label: '夜ごはん' },
+  { key: 'snack', label: '間食' },
+];
+const fmtNum = (v, d = 0) => Number(v).toLocaleString('ja-JP', { maximumFractionDigits: d, minimumFractionDigits: d });
+const mealKcal = (rec) => (rec?.meals || []).reduce((sum, m) => sum + (Number(m.kcal) || 0), 0);
+// 1日の体の記録。以前ヘルスケアから取り込んだ歩数・体重があればそれも使う
+function bodyOf(rec, h) {
+  const pick = (k) => (rec && k in rec ? rec[k] : h?.[k] ?? null);
+  return { weight: pick('weight'), steps: pick('steps'), kcal: mealKcal(rec), meals: rec?.meals || [] };
+}
+const signed = (v, d = 1) => `${v > 0 ? '+' : v < 0 ? '−' : '±'}${fmtNum(Math.abs(v), d)}`;
+
+async function renderBody(day, alive) {
+  const today = dayKey();
+  setChrome('からだ', 'body', day !== today ? '<a class="btn small secondary" href="#/body">今日</a>' : '');
+  const [dayRecs, healths] = await Promise.all([db.allDays(), db.allHealth()]);
+  if (!alive()) return;
+  const recMap = new Map(dayRecs.map((r) => [r.date, r]));
+  const hMap = new Map(healths.map((h) => [h.date, h]));
+  const B = (k) => bodyOf(recMap.get(k), hMap.get(k));
+  const b = B(day);
+  let prevW = null;
+  for (let k = addDays(day, -1), i = 0; i < 60; i++, k = addDays(k, -1)) {
+    const w = B(k).weight;
+    if (w != null) { prevW = w; break; }
+  }
+  const goal = Number(settings.kcalGoal) || 0;
+  const over = goal && b.kcal > goal;
+  const wGoal = Number(settings.weightGoal) || null;
+  const height = Number(settings.height) || null;
+  const bmi = b.weight != null && height ? b.weight / (height / 100) ** 2 : null;
+  const d = parseDay(day);
+  const R = 50; const C = 2 * Math.PI * R;
+  const pct = goal ? Math.min(1, b.kcal / goal) : (b.kcal ? 1 : 0);
+
+  view.innerHTML = `
+    <div class="day-head">
+      <div class="day-nav">
+        <a class="icon-btn" href="#/body/${addDays(day, -1)}" aria-label="前の日">${I.left}</a>
+        <div class="date">
+          <div class="big">${d.getMonth() + 1}<b>/</b>${d.getDate()}</div>
+          <div class="small">${weekday(day)}曜日${day === today ? '<span class="today-badge">今日</span>' : ''}</div>
+        </div>
+        <a class="icon-btn" href="#/body/${addDays(day, 1)}" aria-label="次の日">${I.right}</a>
+      </div>
+    </div>
+
+    <section class="body-card">
+      <div class="kcal-ring ${over ? 'over' : ''}">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="${R}" class="track"/>
+          <circle cx="60" cy="60" r="${R}" class="prog" stroke-dasharray="${(C * pct).toFixed(1)} ${C.toFixed(1)}"/>
+        </svg>
+        <div class="kr-center">
+          <div class="kr-label">食べた</div>
+          <div class="kr-val">${fmtNum(b.kcal)}</div>
+          <div class="kr-unit">${goal ? `/ ${fmtNum(goal)} kcal` : 'kcal'}</div>
+        </div>
+      </div>
+      <div class="body-stats">
+        ${goal ? `<div class="bs-note ${over ? 'over' : ''}">${over ? `目標より ${fmtNum(b.kcal - goal)}kcal 多め` : `あと ${fmtNum(goal - b.kcal)}kcal 食べられます`}</div>` : ''}
+        <button type="button" class="bstat" data-edit="weight">
+          <span class="bs-label">${I.scale}体重</span>
+          <span class="bs-val">${b.weight != null ? `${fmtNum(b.weight, 1)}<small>kg</small>` : '<em>記録する</em>'}</span>
+          ${b.weight != null && prevW != null ? `<span class="bs-sub">前回より ${signed(b.weight - prevW)}kg</span>` : ''}
+          ${b.weight != null && wGoal ? `<span class="bs-sub">${b.weight > wGoal ? `目標まで あと${fmtNum(b.weight - wGoal, 1)}kg` : '目標達成！'}</span>` : ''}
+          ${bmi ? `<span class="bs-sub">BMI ${fmtNum(bmi, 1)}</span>` : ''}
+        </button>
+        <button type="button" class="bstat" data-edit="steps">
+          <span class="bs-label">${I.steps}歩数</span>
+          <span class="bs-val">${b.steps != null ? `${fmtNum(b.steps)}<small>歩</small>` : '<em>記録する</em>'}</span>
+        </button>
+      </div>
+    </section>
+
+    <h2 class="section-title">食事</h2>
+    ${MEALS.map((m) => mealCardHTML(m, b.meals.filter((x) => x.type === m.key))).join('')}
+
+    <h2 class="section-title">推移</h2>
+    ${bodyChartsHTML(day, B, goal, wGoal)}`;
+
+  view.querySelectorAll('[data-edit]').forEach((el) => el.addEventListener('click', () => bodyNumberDialog(day, el.dataset.edit)));
+  view.querySelectorAll('[data-add]').forEach((el) => el.addEventListener('click', () => mealDialog(day, el.dataset.add)));
+  view.querySelectorAll('[data-meal]').forEach((el) => el.addEventListener('click', () => {
+    const item = b.meals.find((x) => x.id === el.dataset.meal);
+    if (item) mealDialog(day, item.type, item);
+  }));
+  hydratePhotos(view);
+  bindCharts(view);
+}
+
+function mealCardHTML(m, items) {
+  const sum = items.reduce((t, x) => t + (Number(x.kcal) || 0), 0);
+  return `
+    <div class="meal-card meal-${m.key}">
+      <div class="meal-head">
+        <span class="mh-name">${m.label}</span>
+        <span class="mh-kcal">${sum ? `${fmtNum(sum)}kcal` : ''}</span>
+        <button type="button" class="icon-btn add" data-add="${m.key}" aria-label="${m.label}を追加">${I.plus}</button>
+      </div>
+      ${items.length ? items.map((it) => `
+        <button type="button" class="meal-item" data-meal="${it.id}">
+          ${it.photo ? `<img data-photo="${esc(it.photo)}" alt="">` : ''}
+          <span class="mi-name">${esc(it.name || '（名前なし）')}</span>
+          <span class="mi-kcal">${it.kcal != null ? `${fmtNum(it.kcal)}kcal` : ''}</span>
+        </button>`).join('') : `<button type="button" class="meal-empty" data-add="${m.key}">${I.plus}${m.label}を記録</button>`}
+    </div>`;
+}
+
+// よく食べるもの（名前ごとに回数を数え、最近の値を使う）
+async function recentFoods() {
+  const map = new Map();
+  for (const r of (await db.allDays()).sort((a, b) => a.date.localeCompare(b.date))) {
+    for (const m of r.meals || []) {
+      if (!m.name) continue;
+      const e = map.get(m.name) || { name: m.name, kcal: null, n: 0 };
+      e.n++;
+      if (m.kcal != null) e.kcal = m.kcal;
+      map.set(m.name, e);
+    }
+  }
+  return [...map.values()].sort((a, b) => b.n - a.n).slice(0, 10);
+}
+
+// Enter で「消す」が押されないように、いつも「保存」で送る
+function enterSaves(form) {
+  form.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+      e.preventDefault();
+      form.requestSubmit(form.querySelector('[value=ok]'));
+    }
+  });
+}
+
+async function mealDialog(day, type, item) {
+  const recent = item ? [] : await recentFoods();
+  const closed = openDialog(`
+    <form method="dialog">
+      <div class="dlg-head">${item ? '食事を編集' : '食事を記録'}</div>
+      <div class="dlg-body">
+        <div class="field"><div class="seg">${MEALS.map((m) => `<label><input type="radio" name="type" value="${m.key}" ${m.key === (item?.type || type) ? 'checked' : ''}><span>${m.label}</span></label>`).join('')}</div></div>
+        ${recent.length ? `<div class="field"><span class="help">よく食べるもの</span><div class="recent">${recent.map((f, i) => `<button type="button" class="chip" data-i="${i}">${esc(f.name)}${f.kcal != null ? `<small>${fmtNum(f.kcal)}</small>` : ''}</button>`).join('')}</div></div>` : ''}
+        <div class="field"><label for="m-name">食べたもの</label><input id="m-name" type="text" name="name" value="${esc(item?.name || '')}" placeholder="例：おにぎり" autocomplete="off"></div>
+        <div class="field"><label for="m-kcal">カロリー（kcal）</label><input id="m-kcal" type="number" inputmode="numeric" name="kcal" value="${item?.kcal ?? ''}" placeholder="わからなければ空でOK"></div>
+        <div class="field row"><span class="label">写真</span>
+          <span class="btn-row"><span class="photo-state help">${item?.photo ? '写真あり' : ''}</span>
+          <label class="btn small secondary">${I.photo}${item?.photo ? '変える' : '選ぶ'}<input type="file" accept="image/*" name="photo" hidden></label></span></div>
+      </div>
+      <div class="dlg-foot">${item ? '<button class="btn danger" value="delete">削除</button><span class="spacer"></span>' : ''}<button class="btn secondary" value="cancel">キャンセル</button><button class="btn" value="ok">保存</button></div>
+    </form>`);
+  const form = $('#dialog form');
+  enterSaves(form);
+  let photoBlob = null;
+  form.querySelectorAll('.recent [data-i]').forEach((btn) => btn.addEventListener('click', () => {
+    const f = recent[Number(btn.dataset.i)];
+    form.elements.name.value = f.name;
+    form.elements.kcal.value = f.kcal ?? '';
+  }));
+  form.elements.photo.addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    photoBlob = await resizeImage(f);
+    form.querySelector('.photo-state').textContent = '✓ 写真を選びました';
+  });
+  if (!item) setTimeout(() => form.elements.name.focus(), 50);
+
+  const r = await closed;
+  if (r !== 'ok' && r !== 'delete') return;
+  const rec = (await db.getDay(day)) || { date: day };
+  rec.meals = rec.meals || [];
+  if (r === 'delete') {
+    if (item.photo) await db.deletePhoto(item.photo);
+    rec.meals = rec.meals.filter((x) => x.id !== item.id);
+    toast('削除しました');
+  } else {
+    const name = form.elements.name.value.trim();
+    const kcalStr = form.elements.kcal.value.trim();
+    const kcal = kcalStr === '' || !Number.isFinite(Number(kcalStr)) ? null : Math.round(Number(kcalStr));
+    if (!name && kcal == null && !photoBlob) { toast('食べたものかカロリーを入れてください'); return; }
+    const t = form.elements.type.value;
+    let photo = item?.photo || null;
+    if (photoBlob) {
+      if (photo) await db.deletePhoto(photo);
+      photo = await db.addPhoto(photoBlob);
+    }
+    const next = { id: item?.id || uid(), type: t, name, kcal, photo, at: item?.at || Date.now() };
+    rec.meals = item ? rec.meals.map((x) => (x.id === item.id ? next : x)) : [...rec.meals, next];
+    toast(item ? '保存しました' : `${MEALS.find((m) => m.key === t).label}を記録しました`);
+  }
+  rec.updatedAt = Date.now();
+  await db.putDay(rec);
+  router();
+}
+
+async function bodyNumberDialog(day, field) {
+  const conf = field === 'weight'
+    ? { label: '体重', unit: 'kg', step: '0.1', mode: 'decimal', ph: '例：52.3' }
+    : { label: '歩数', unit: '歩', step: '1', mode: 'numeric', ph: '例：8000' };
+  const rec = (await db.getDay(day)) || { date: day };
+  const cur = bodyOf(rec, await db.getHealth(day))[field] ?? '';
+  const closed = openDialog(`
+    <form method="dialog">
+      <div class="dlg-head">${conf.label}</div>
+      <div class="dlg-body"><div class="field">
+        <div class="num-input"><input type="number" name="v" step="${conf.step}" inputmode="${conf.mode}" value="${cur}" placeholder="${conf.ph}"><span>${conf.unit}</span></div>
+        ${field === 'steps' ? `<button type="button" class="btn small secondary" id="steps-clip">ショートカットから貼り付け</button>
+          <div class="help">iPhoneの「ショートカット」で、今日の歩数を「歩数: 8123」のようにコピーしておくと読み取れます。</div>` : ''}
+      </div></div>
+      <div class="dlg-foot">${cur !== '' ? '<button class="btn danger" value="clear">消す</button><span class="spacer"></span>' : ''}<button class="btn secondary" value="cancel">キャンセル</button><button class="btn" value="ok">保存</button></div>
+    </form>`);
+  const form = $('#dialog form');
+  enterSaves(form);
+  const input = form.elements.v;
+  setTimeout(() => input.focus(), 50);
+  form.querySelector('#steps-clip')?.addEventListener('click', async () => {
+    let text = '';
+    try { text = await navigator.clipboard.readText(); } catch { /* 許可されない */ }
+    const m = text.match(/歩数[^\d]*([\d,]+)/) || text.match(/([\d,]{2,})/);
+    if (m) { input.value = m[1].replace(/,/g, ''); toast('歩数を読み取りました'); }
+    else toast('歩数が見つかりませんでした');
+  });
+  const r = await closed;
+  if (r === 'clear') rec[field] = null;
+  else if (r === 'ok') {
+    const v = Number(input.value);
+    if (input.value === '' || !Number.isFinite(v) || v < 0) return;
+    rec[field] = field === 'steps' ? Math.round(v) : Math.round(v * 10) / 10;
+  } else return;
+  rec.updatedAt = Date.now();
+  await db.putDay(rec);
+  toast(r === 'clear' ? '消しました' : `${conf.label}を記録しました`);
+  router();
+}
+
+// 体重（30日）・食べたカロリー（14日、目標の線つき）・歩数（14日）
+function bodyChartsHTML(day, B, goal, wGoal) {
+  const keys = (n) => Array.from({ length: n }, (_, i) => addDays(day, i - n + 1));
+  const k30 = keys(30); const k14 = keys(14);
+  return [
+    seriesChart({ title: '体重（30日）', keys: k30, values: k30.map((k) => B(k).weight), kind: 'line', unit: 'kg', digits: 1, goal: wGoal }),
+    seriesChart({ title: '食べたカロリー（14日）', keys: k14, values: k14.map((k) => B(k).kcal || null), kind: 'bar', unit: 'kcal', goal: goal || null }),
+    seriesChart({ title: '歩数（14日）', keys: k14, values: k14.map((k) => B(k).steps), kind: 'bar', unit: '歩' }),
+  ].join('');
+}
+
+function seriesChart({ title, keys, values, kind, unit, digits = 0, goal = null }) {
+  const has = values.filter((v) => v != null);
+  if (!has.length) return `<div class="chart-card"><div class="chart-title">${title}</div><p class="chart-empty">まだ記録がありません</p></div>`;
+  const W = 340; const H = 150; const pl = 40; const pr = 8; const pt = 14; const pb = 24;
+  const cw = W - pl - pr; const ch = H - pt - pb; const n = keys.length; const step = cw / n;
+  const cx = (i) => pl + (i + 0.5) * step;
+  const md = (k) => { const d = parseDay(k); return `${d.getMonth() + 1}/${d.getDate()}`; };
+  let lo; let hi;
+  if (kind === 'line') {
+    lo = Math.min(...has, goal ?? Infinity); hi = Math.max(...has, goal ?? -Infinity);
+    const pad = Math.max(0.5, (hi - lo) * 0.15); lo -= pad; hi += pad;
+  } else { lo = 0; hi = Math.max(...has, goal ?? 0) * 1.08; }
+  const y = (v) => pt + (1 - (v - lo) / (hi - lo || 1)) * ch;
+  const base = pt + ch;
+  const fmtV = (v) => fmtNum(v, digits);
+  const xAxis = [0, Math.floor((n - 1) / 2), n - 1].map((i) => `<text x="${cx(i)}" y="${H - 6}" class="ax" text-anchor="middle">${md(keys[i])}</text>`).join('');
+  const yAxis = (kind === 'line' ? [hi, lo] : [hi / 1.08, 0]).map((v) => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" class="grid ${v === 0 ? 'base' : ''}"/><text x="${pl - 6}" y="${y(v) + 4}" class="ax" text-anchor="end">${fmtNum(v, kind === 'line' ? digits : 0)}</text>`).join('');
+  const goalLine = goal != null ? `<line x1="${pl}" x2="${W - pr}" y1="${y(goal)}" y2="${y(goal)}" class="goal"/>` : '';
+  let marks = '';
+  if (kind === 'line') {
+    let path = ''; let pen = false;
+    values.forEach((v, i) => { if (v == null) { pen = false; return; } path += `${pen ? 'L' : 'M'}${cx(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
+    marks = `<path d="${path}" class="line"/>${values.map((v, i) => (v == null ? '' : `<circle cx="${cx(i)}" cy="${y(v)}" r="4" class="mk"/>`)).join('')}`;
+  } else {
+    const bw = Math.max(2, step - 2);
+    marks = values.map((v, i) => {
+      if (!v) return '';
+      const x = cx(i) - bw / 2; const top = y(v); const h = base - top; const r = Math.min(4, bw / 2, h);
+      return `<path d="M${x},${base}V${top + r}Q${x},${top} ${x + r},${top}H${x + bw - r}Q${x + bw},${top} ${x + bw},${top + r}V${base}Z" class="bar"/>`;
+    }).join('');
+  }
+  const hits = values.map((v, i) => (v == null ? '' : `<rect x="${cx(i) - step / 2}" y="${pt}" width="${step}" height="${ch}" class="hit" data-x="${cx(i)}" data-day="${keys[i]}" data-href="#/body/${keys[i]}" data-tip="${md(keys[i])}　${fmtV(v)}${unit}"/>`)).join('');
+  const rows = values.map((v, i) => (v == null ? '' : `<tr><td>${md(keys[i])}</td><td>${fmtV(v)}${unit}</td></tr>`)).join('');
+  return `
+    <div class="chart-card">
+      <div class="chart-title">${title}${goal != null ? `<span class="goal-key">目標 ${fmtV(goal)}${unit}</span>` : ''}</div>
+      <div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="${title}">${yAxis}${goalLine}${xAxis}${marks}${hits}</svg><div class="chart-tip" hidden></div></div>
+      <details class="chart-table"><summary>表で見る</summary><table>${rows}</table></details>
+    </div>`;
+}
+
 /* ================= カレンダー ================= */
 async function renderCalendar(ym, alive) {
   const thisMonth = dayKey().slice(0, 7);
@@ -1248,7 +1554,7 @@ async function renderCalendar(ym, alive) {
     <div class="stat-grid">
       <div class="stat-tile"><div class="label">ポスト</div><div class="value">${monthPosts}<span class="unit">件</span></div></div>
       <div class="stat-tile"><div class="label">書いた日</div><div class="value">${byDay.size}<span class="unit">日</span></div></div>
-      <div class="stat-tile"><div class="label">足あと</div><div class="value">${[...byDay.values()].reduce((n, e) => n + e.loc, 0)}<span class="unit">か所</span></div><div class="sub">移動 約${fmtKm(monthKm)}km</div></div>
+      <a class="stat-tile" href="#/map"><div class="label">足あと ›</div><div class="value">${[...byDay.values()].reduce((n, e) => n + e.loc, 0)}<span class="unit">か所</span></div><div class="sub">移動 約${fmtKm(monthKm)}km</div></a>
       <div class="stat-tile"><div class="label">連続記録</div><div class="value">${st.current}<span class="unit">日</span></div></div>
       <div class="stat-tile"><div class="label">最長記録</div><div class="value">${st.best}<span class="unit">日</span></div></div>
       <div class="stat-tile"><div class="label">今月の気分</div><div class="value">${monthMood(moods, ym)}</div></div>
@@ -1337,7 +1643,7 @@ function bindCharts(root) {
     if (!svg) return;
     const show = (t) => {
       const sx = svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
-      tip.innerHTML = `${esc(t.dataset.tip)}<a href="#/day/${t.dataset.day}">開く</a>`;
+      tip.innerHTML = `${esc(t.dataset.tip)}<a href="${t.dataset.href || `#/day/${t.dataset.day}`}">開く</a>`;
       tip.hidden = false;
       const left = Math.min(Math.max(Number(t.dataset.x) * sx, 70), wrap.clientWidth - 70);
       tip.style.left = `${left}px`;
@@ -1433,8 +1739,19 @@ async function renderSettings(alive) {
         </ul>
       </details>
       <details class="howto">
+        <summary>からだ（食事・体重・歩数）</summary>
+        <ul>
+          <li><b>からだ</b>タブで、朝ごはん・昼ごはん・夜ごはん・間食ごとに、食べたものとカロリーを記録できます。写真もつけられます。</li>
+          <li>一度入れた食べものは「よく食べるもの」に出るので、次からはタップで入れられます。</li>
+          <li>上の丸いグラフで、目標カロリーに対してどれくらい食べたかがわかります。目標は設定の「からだ」で変えられます。</li>
+          <li>体重・歩数はタップして入力。歩数は、iPhoneのショートカットで「歩数: 8123」のようにコピーしておくと貼り付けで入れられます。</li>
+          <li>下の「推移」で、体重・カロリー・歩数のグラフが見られます。</li>
+        </ul>
+      </details>
+      <details class="howto">
         <summary>日記帳・カレンダー・足あと</summary>
         <ul>
+          <li>足あとの地図は、日記帳の「足あと」の「すべて」か、カレンダーの「足あと」から開けます。</li>
           <li><b>今日の気分</b>：ホームの「今日の気分は？」か、日記帳の日付の下で5段階から選びます。もう一度押すと取り消し。カレンダーにも表示されます。</li>
           <li><b>天気</b>：位置つきで投稿すると、その時の天気と気温が自動で記録されます（投稿の時刻の横と、日記帳の日付の下に表示）。</li>
           <li><b>連続記録</b>：毎日投稿すると、ホーム右上に何日続いているかが出ます。タップすると最長記録も見られます。</li>
@@ -1481,6 +1798,13 @@ async function renderSettings(alive) {
     <div class="field"><label for="s-handle">ユーザー名</label><input id="s-handle" type="text" value="${esc(settings.handle)}"></div>
     </div>
 
+    <h2 class="section-title">からだ</h2>
+    <div class="group">
+    <div class="field row"><label for="s-kcal">1日の目標カロリー</label><span class="num-input small"><input id="s-kcal" type="number" inputmode="numeric" value="${esc(settings.kcalGoal)}" placeholder="1800"><span>kcal</span></span></div>
+    <div class="field row"><label for="s-wgoal">目標体重</label><span class="num-input small"><input id="s-wgoal" type="number" inputmode="decimal" step="0.1" value="${esc(settings.weightGoal)}" placeholder="—"><span>kg</span></span></div>
+    <div class="field row"><label for="s-height">身長（BMI用）</label><span class="num-input small"><input id="s-height" type="number" inputmode="decimal" value="${esc(settings.height)}" placeholder="—"><span>cm</span></span></div>
+    </div>
+
     <h2 class="section-title">位置情報</h2>
     <div class="group">
     <div class="field row"><div><div class="label">ポストに位置をつける</div><div class="help">新しいポストの位置ボタンを最初からONにします</div></div>
@@ -1503,7 +1827,7 @@ async function renderSettings(alive) {
 
     <h2 class="section-title">その他</h2>
     <div class="group"><div class="field"><div class="btn-row"><button class="btn small danger" id="wipe">すべてのデータを削除</button></div></div></div>
-    <p class="section-sub" style="padding-top:12px">Daylog v1.8</p>
+    <p class="section-sub" style="padding-top:12px">Daylog v2.0</p>
   </div>`;
 
   const bindText = (id, key) => $(id).addEventListener('change', (e) => {
@@ -1513,6 +1837,14 @@ async function renderSettings(alive) {
   });
   bindText('#s-name', 'name');
   bindText('#s-handle', 'handle');
+  for (const [id, key] of [['#s-kcal', 'kcalGoal'], ['#s-wgoal', 'weightGoal'], ['#s-height', 'height']]) {
+    $(id).addEventListener('change', (e) => {
+      const v = e.target.value.trim();
+      settings[key] = v === '' ? '' : Number(v);
+      saveSettings();
+      toast('保存しました');
+    });
+  }
   $('#s-avatar-clear')?.addEventListener('click', () => {
     settings.avatarImage = '';
     saveSettings();
@@ -1587,7 +1919,14 @@ async function exportBackup() {
     exportedAt: new Date().toISOString(),
     posts: await Promise.all(posts.map(async (p) => ({ ...p, photos: await photosOf(p) }))),
     health,
-    days: await db.allDays(),
+    days: await Promise.all((await db.allDays()).map(async (d) => ({
+      ...d,
+      meals: await Promise.all((d.meals || []).map(async (m) => {
+        if (!m.photo) return m;
+        const blob = await db.getPhoto(m.photo);
+        return { ...m, photo: null, photoData: blob ? await blobToDataURL(blob) : null };
+      })),
+    }))),
     settings,
   };
   const name = `daylog-backup-${dayKey()}.json`;
@@ -1618,7 +1957,16 @@ async function importBackup(file) {
       await db.putPost({ ...p, photos: ids });
     }
     for (const h of data.health || []) await db.putHealth(h);
-    for (const d of data.days || []) await db.putDay(d);
+    for (const d of data.days || []) {
+      const old = await db.getDay(d.date);
+      for (const m of old?.meals || []) if (m.photo) await db.deletePhoto(m.photo);
+      const meals = [];
+      for (const m of d.meals || []) {
+        const { photoData, ...rest } = m;
+        meals.push(photoData ? { ...rest, photo: await db.addPhoto(await dataURLToBlob(photoData)) } : rest);
+      }
+      await db.putDay({ ...d, meals });
+    }
     if (data.settings) { settings = { ...DEFAULTS, ...data.settings }; saveSettings(); }
     toast(`${(data.posts || []).length}件のポストを読み込みました`);
     router();

@@ -677,6 +677,17 @@ body::before {
 .tc-body span:nth-child(3) { background: var(--lav-soft); }
 .tc-body svg { width: 18px; height: 18px; color: var(--muted); }
 .tc-body small { font-size: 11px; font-weight: 500; color: var(--muted); margin-left: 1px; }
+/* まだの記録 */
+.tc-todo { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.todo-q { flex: none; font-size: 13px; font-weight: 600; color: color-mix(in srgb, var(--pink) 80%, #c0306a); }
+.todo-list { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin-right: -16px; padding-right: 16px; }
+.todo-list::-webkit-scrollbar { display: none; }
+.todo { flex: none; border: 1px dashed color-mix(in srgb, var(--pink) 70%, transparent); background: var(--pink-soft); color: var(--text); border-radius: 999px; padding: 5px 12px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.todo::before { content: '+ '; color: var(--muted); }
+.todo:active { opacity: .6; }
+.tc-mood.flash { animation: todo-flash 1.2s ease; border-radius: 12px; }
+@keyframes todo-flash { 0%, 60% { background: var(--pink-soft); } 100% { background: transparent; } }
+.help.inline { display: inline; margin-left: 8px; font-size: 13px; }
 .tc-body em { font-style: normal; font-size: 13px; font-weight: 500; color: var(--muted); }
 
 /* ---------- からだ ---------- */

@@ -9,7 +9,7 @@ import {
 
 /* ================= 設定 ================= */
 const SETTINGS_KEY = 'daylog.settings';
-const DEFAULTS = { name: 'わたし', handle: 'me', avatarImage: '', autoLocation: true, geocode: true, weather: true, kcalGoal: 1800, weightGoal: '', height: '' };
+const DEFAULTS = { name: 'わたし', handle: 'me', avatarImage: '', autoLocation: true, geocode: true, weather: true, kcalGoal: 1800, weightGoal: '', height: '', remindOff: [], badge: false };
 function loadSettings() {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; }
   catch { return { ...DEFAULTS }; }
@@ -241,6 +241,7 @@ async function router() {
     console.error(e);
     view.innerHTML = `<div class="empty"><strong>エラー</strong>${esc(e.message)}</div>`;
   }
+  updateBadge();
 }
 
 /* ================= ポスト ================= */
@@ -971,6 +972,7 @@ async function renderHome(query, alive, searchMode = false) {
         <div class="tc-date">${d.getMonth() + 1}月${d.getDate()}日 ${weekday(today)}曜日${todays.length ? `<span class="tc-count">・${todays.length}件の記録</span>` : ''}</div>
         ${wx ? `<div class="tc-wx">${weatherInfo(wx.code).emoji} ${wx.temp}℃</div>` : ''}
       </div>
+      ${todoHTML(pendingOf(todayRec, todayHealth, todays))}
       <button type="button" class="tc-prompt">
         <span class="avatar">${avatarHTML()}</span>
         <span class="tc-q">${todays.length ? 'ほかにはどんなことが？' : '今日はどんな日？'}</span>
@@ -991,8 +993,12 @@ async function renderHome(query, alive, searchMode = false) {
   if (!searchMode) {
     view.querySelector('.tc-prompt').addEventListener('click', () => openComposer());
     view.querySelector('.fab').addEventListener('click', () => openComposer());
+    bindTodo(view.querySelector('.today-card'), today);
     bindMoodButtons(view.querySelector('.tc-mood'), today, (v) => {
       if (v) toast(`今日の気分を「${moodOf(v).label}」で記録しました`);
+      view.querySelector('[data-todo="mood"]')?.remove();
+      if (!view.querySelector('[data-todo]')) view.querySelector('.tc-todo')?.remove();
+      updateBadge();
     });
     view.querySelectorAll('[data-bk]').forEach((b) => b.addEventListener('click', async () => {
       if (b.dataset.bk === 'now') {
@@ -1227,6 +1233,64 @@ function bodyOf(rec, h) {
   const pick = (k) => (rec && k in rec ? rec[k] : h?.[k] ?? null);
   return { weight: pick('weight'), steps: pick('steps'), kcal: mealKcal(rec), meals: rec?.meals || [], skipped: rec?.skipped || [] };
 }
+/* ================= まだの記録（お知らせ） ================= */
+// 決めた時刻を過ぎてもまだ記録していないものを「まだ」として出す
+const REMINDERS = [
+  { key: 'weight', label: '体重', hour: 10 },
+  { key: 'breakfast', label: '朝ごはん', hour: 10 },
+  { key: 'lunch', label: '昼ごはん', hour: 14 },
+  { key: 'mood', label: '今日の気分', hour: 19 },
+  { key: 'post', label: '日記', hour: 19 },
+  { key: 'dinner', label: '夜ごはん', hour: 20 },
+  { key: 'steps', label: '歩数', hour: 21 },
+];
+function pendingOf(rec, health, todayPosts, now = new Date()) {
+  const b = bodyOf(rec, health);
+  const done = { weight: b.weight != null, steps: b.steps != null, mood: !!rec?.mood, post: todayPosts.length > 0 };
+  for (const m of MEALS) done[m.key] = b.meals.some((x) => x.type === m.key) || b.skipped.includes(m.key);
+  const off = settings.remindOff || [];
+  return REMINDERS.filter((r) => !off.includes(r.key) && now.getHours() >= r.hour && !done[r.key]);
+}
+async function pendingToday() {
+  const today = dayKey();
+  const [rec, h, posts] = await Promise.all([db.getDay(today), db.getHealth(today), db.postsByDay(today)]);
+  return pendingOf(rec, h, posts);
+}
+
+// ホーム画面のアイコンに「まだ」の数を出す（iPhone はホーム画面に追加したアプリ＋通知の許可が必要）
+const canBadge = 'setAppBadge' in navigator;
+async function updateBadge() {
+  if (!canBadge) return;
+  try {
+    const n = settings.badge ? (await pendingToday()).length : 0;
+    if (n) await navigator.setAppBadge(n);
+    else await navigator.clearAppBadge();
+  } catch { /* 許可がないなど */ }
+}
+
+function todoHTML(pending) {
+  if (!pending.length) return '';
+  return `<div class="tc-todo">
+    <span class="todo-q">まだの記録</span>
+    <div class="todo-list">${pending.map((r) => `<button type="button" class="todo" data-todo="${r.key}">${esc(r.label)}</button>`).join('')}</div>
+  </div>`;
+}
+
+function bindTodo(root, day) {
+  root.querySelectorAll('[data-todo]').forEach((b) => b.addEventListener('click', () => {
+    const k = b.dataset.todo;
+    if (k === 'post') openComposer({ day });
+    else if (k === 'weight' || k === 'steps') bodyNumberDialog(day, k);
+    else if (k === 'mood') {
+      const el = root.querySelector('.tc-mood');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el?.classList.remove('flash');
+      void el?.offsetWidth;
+      el?.classList.add('flash');
+    } else mealDialog(day, k);
+  }));
+}
+
 const signed = (v, d = 1) => `${v > 0 ? '+' : v < 0 ? '−' : '±'}${fmtNum(Math.abs(v), d)}`;
 
 async function renderBody(day, alive) {
@@ -1774,6 +1838,8 @@ async function renderSettings(alive) {
           <li>足あとの地図は、日記帳の「足あと」の「すべて」か、カレンダーの「足あと」から開けます。</li>
           <li><b>今日の気分</b>：ホームの「今日の気分は？」か、日記帳の日付の下で5段階から選びます。もう一度押すと取り消し。カレンダーにも表示されます。</li>
           <li><b>天気</b>：位置つきで投稿すると、その時の天気と気温が自動で記録されます（投稿の時刻の横と、日記帳の日付の下に表示）。</li>
+          <li><b>まだの記録</b>：朝ごはんは10時、昼ごはんは14時…と時間を過ぎても記録していないものが、ホームの今日のカードに出ます。タップするとすぐ入力できます。出す項目は設定の「お知らせ」で選べます。</li>
+          <li><b>アイコンのバッジ</b>：設定の「お知らせ」でオンにすると、ホーム画面のアイコンに「まだ」の数が出ます。数はアプリを開いたとき・閉じたときに更新されます。</li>
           <li><b>連続記録</b>：毎日投稿すると、ホーム右上に何日続いているかが出ます。タップすると最長記録も見られます。</li>
           <li><b>日記帳</b>：1日1ページ。その日のできごとと、行った場所の地図が並びます。下には「過去の同じ日」も出ます。</li>
           <li>‹ › で前後の日へ。真ん中の日付をタップすると日付を選べます。</li>
@@ -1823,6 +1889,17 @@ async function renderSettings(alive) {
     <div class="field row"><label for="s-kcal">1日の目標カロリー</label><span class="num-input small"><input id="s-kcal" type="number" inputmode="numeric" value="${esc(settings.kcalGoal)}" placeholder="1800"><span>kcal</span></span></div>
     <div class="field row"><label for="s-wgoal">目標体重</label><span class="num-input small"><input id="s-wgoal" type="number" inputmode="decimal" step="0.1" value="${esc(settings.weightGoal)}" placeholder="—"><span>kg</span></span></div>
     <div class="field row"><label for="s-height">身長（BMI用）</label><span class="num-input small"><input id="s-height" type="number" inputmode="decimal" value="${esc(settings.height)}" placeholder="—"><span>cm</span></span></div>
+    </div>
+
+    <h2 class="section-title">お知らせ</h2>
+    <div class="group">
+    <div class="field"><div class="help">時間を過ぎてもまだ記録していないものを、ホームの「まだの記録」に出します。タップするとすぐ入力できます。</div></div>
+    ${REMINDERS.map((r) => `<div class="field row"><div class="label">${esc(r.label)}<span class="help inline">${r.hour}時から</span></div>
+      <label class="switch"><input type="checkbox" data-remind="${r.key}" ${(settings.remindOff || []).includes(r.key) ? '' : 'checked'}><span></span></label></div>`).join('')}
+    <div class="field row"><div><div class="label">アイコンに数を出す</div><div class="help">${canBadge
+      ? 'ホーム画面のアプリのアイコンに、まだの記録の数をバッジで出します。通知の許可が必要です。'
+      : 'この画面では使えません。iPhone では Safari の「ホーム画面に追加」から開いたアプリで使えます。'}</div></div>
+      <label class="switch"><input type="checkbox" id="s-badge" ${settings.badge && canBadge ? 'checked' : ''} ${canBadge ? '' : 'disabled'}><span></span></label></div>
     </div>
 
     <h2 class="section-title">位置情報</h2>
@@ -1888,6 +1965,27 @@ async function renderSettings(alive) {
     settings.autoLocation = e.target.checked;
     saveSettings();
     if (e.target.checked) getPosition().catch((err) => toast(err.message)); // 許可ダイアログを先に出す
+  });
+  view.querySelectorAll('[data-remind]').forEach((el) => el.addEventListener('change', () => {
+    const off = new Set(settings.remindOff || []);
+    if (el.checked) off.delete(el.dataset.remind); else off.add(el.dataset.remind);
+    settings.remindOff = [...off];
+    saveSettings();
+    updateBadge();
+  }));
+  $('#s-badge').addEventListener('change', async (e) => {
+    if (e.target.checked && 'Notification' in window && Notification.permission !== 'granted') {
+      const res = await Notification.requestPermission().catch(() => 'denied');
+      if (res !== 'granted') {
+        e.target.checked = false;
+        toast('通知が許可されていないため、バッジを出せません。iPhone の 設定 → 通知 → Daylog で許可できます', 5000);
+        return;
+      }
+    }
+    settings.badge = e.target.checked;
+    saveSettings();
+    await updateBadge();
+    toast(settings.badge ? 'アイコンに数を出します' : 'アイコンの数を消しました');
   });
   $('#s-geocode').addEventListener('change', (e) => { settings.geocode = e.target.checked; saveSettings(); });
   $('#s-weather').addEventListener('change', (e) => { settings.weather = e.target.checked; saveSettings(); });
@@ -2005,6 +2103,15 @@ for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
 
 window.addEventListener('hashchange', () => { router(); window.scrollTo(0, 0); });
 window.addEventListener('online', retryMissingNames);
+// アプリに戻ったとき・閉じるときにバッジを最新に。日付や時間帯が変わっていたらホームも描き直す
+let lastSlot = `${dayKey()}-${new Date().getHours()}`;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') { updateBadge(); return; }
+  const slot = `${dayKey()}-${new Date().getHours()}`;
+  if (slot !== lastSlot && !document.querySelector('#dialog[open]') && (location.hash || '#/') === '#/') router();
+  else updateBadge();
+  lastSlot = slot;
+});
 router();
 setTimeout(retryMissingNames, 3000);
 
